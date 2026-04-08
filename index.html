@@ -18,6 +18,7 @@
             --danger: #dc2626;
             --danger-dark: #b91c1c;
             --success: #16a34a;
+            --warning: #f59e0b;
             --bg: #f8fafc;
             --card: #ffffff;
             --text: #1e293b;
@@ -213,6 +214,15 @@
             color: white;
         }
 
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-warning:hover:not(:disabled) {
+            background: #d97706;
+        }
+
         .settings-panel {
             background: var(--card);
             border-radius: 12px;
@@ -356,6 +366,38 @@
             color: white;
         }
 
+        .btn-icon.transcode {
+            color: var(--warning);
+        }
+
+        .btn-icon.transcode:hover {
+            background: var(--warning);
+            color: white;
+        }
+
+        .transcoding-status {
+            font-size: 11px;
+            color: var(--warning);
+            margin-left: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .transcoding-status::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border: 2px solid var(--warning);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -413,7 +455,7 @@
             opacity: 0.3;
         }
 
-        /* 可调整大小的悬浮小窗 - 始终置顶 */
+        /* 超紧凑悬浮小窗 - 100×60px 最小值 */
         .floating-pip {
             position: fixed;
             bottom: 20px;
@@ -421,15 +463,15 @@
             width: 320px;
             height: 180px;
             background: #000;
-            border-radius: 12px;
+            border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.4);
-            z-index: 2147483647; /* 最高层级 */
+            z-index: 2147483647;
             display: none;
             border: 2px solid var(--primary);
-            resize: both; /* 允许手动调整大小 */
-            min-width: 200px;
-            min-height: 120px;
+            resize: both;
+            min-width: 100px;      /* 压缩至 100px */
+            min-height: 60px;      /* 压缩至 60px */
             max-width: 800px;
             max-height: 600px;
         }
@@ -440,15 +482,15 @@
 
         .floating-pip video {
             width: 100%;
-            height: calc(100% - 36px);
+            height: calc(100% - 24px);
             object-fit: cover;
-            pointer-events: none; /* 防止视频拦截鼠标事件 */
+            pointer-events: none;
         }
 
         .pip-header {
-            height: 36px;
+            height: 24px;
             background: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.7));
-            padding: 0 12px;
+            padding: 0 6px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -458,16 +500,16 @@
 
         .pip-title {
             color: white;
-            font-size: 12px;
+            font-size: 10px;
             font-weight: 500;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
         }
 
         .pip-controls {
             display: flex;
-            gap: 8px;
+            gap: 4px;
             align-items: center;
         }
 
@@ -475,46 +517,63 @@
             background: rgba(255,255,255,0.2);
             border: none;
             color: white;
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 12px;
             transition: background 0.2s;
+            padding: 0;
+            line-height: 1;
         }
 
         .pip-btn:hover {
             background: rgba(255,255,255,0.3);
         }
 
-        /* 调整大小的手柄 */
         .resize-handle {
             position: absolute;
             bottom: 0;
             right: 0;
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
             cursor: se-resize;
             background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.5) 50%);
-            border-bottom-right-radius: 10px;
+            border-bottom-right-radius: 6px;
         }
 
-        /* 原生 Picture-in-Picture 备用方案 */
-        .native-pip-notice {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.8);
+        .background-hint {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--success);
             color: white;
-            padding: 12px 20px;
+            padding: 10px 16px;
             border-radius: 8px;
             font-size: 13px;
-            text-align: center;
             display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 999;
+            animation: slideIn 0.3s ease;
+        }
+
+        .background-hint.show {
+            display: flex;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
 
         .toast {
@@ -580,36 +639,23 @@
             font-size: 11px;
         }
 
-        /* 后台运行提示 */
-        .background-hint {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: var(--success);
-            color: white;
-            padding: 10px 16px;
-            border-radius: 8px;
-            font-size: 13px;
-            display: none;
-            align-items: center;
-            gap: 8px;
-            z-index: 999;
-            animation: slideIn 0.3s ease;
+        .format-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-left: 8px;
         }
 
-        .background-hint.show {
-            display: flex;
+        .format-badge.webm {
+            background: #dbeafe;
+            color: #1e40af;
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+        .format-badge.mp4 {
+            background: #dcfce7;
+            color: #166534;
         }
     </style>
 </head>
@@ -721,6 +767,13 @@
                     </div>
 
                     <div class="setting-item">
+                        <label>音频输入设备</label>
+                        <select id="audioSelect">
+                            <option value="">默认麦克风</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item">
                         <label>文件命名前缀</label>
                         <input type="text" id="namePrefix" placeholder="会议录像" value="会议录像">
                     </div>
@@ -761,12 +814,12 @@
         </div>
     </div>
 
-    <!-- 可拖拽调整大小的悬浮小窗 -->
+    <!-- 超紧凑悬浮小窗 -->
     <div class="floating-pip" id="floatingPip">
         <div class="pip-header" id="pipHeader">
             <span class="pip-title">
                 <span style="color: #ef4444; animation: blink 1s infinite;">●</span>
-                录制中
+                REC
             </span>
             <div class="pip-controls">
                 <button class="pip-btn" onclick="togglePause()" title="暂停/继续">⏸</button>
@@ -805,8 +858,28 @@
         </div>
     </div>
 
+    <!-- 转码进度弹窗 -->
+    <div class="modal-overlay" id="transcodeModal">
+        <div class="modal">
+            <h4 style="color: var(--warning);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v4m0 12v4m-6-6h4m8 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                </svg>
+                正在转码为 MP4
+            </h4>
+            <p>请稍候，正在将 WebM 转换为 MP4 格式以便后期编辑...<br><span id="transcodeProgress" style="color: var(--primary); font-weight: 600;">初始化中...</span></p>
+            <div style="width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;">
+                <div id="transcodeBar" style="width: 0%; height: 100%; background: var(--warning); transition: width 0.3s;"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast 提示 -->
     <div class="toast" id="toast"></div>
+
+    <!-- FFmpeg.js 用于浏览器端转码 -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 
     <script>
         // IndexedDB 配置
@@ -825,6 +898,19 @@
         let fileToDelete = null;
         let isBackground = false;
         let animationFrameId = null;
+        let ffmpeg = null;
+
+        // 初始化 FFmpeg
+        async function initFFmpeg() {
+            if (ffmpeg) return ffmpeg;
+            const { FFmpeg } = window.FFmpeg;
+            ffmpeg = new FFmpeg();
+            ffmpeg.on('log', ({ message }) => {
+                console.log('FFmpeg:', message);
+            });
+            await ffmpeg.load();
+            return ffmpeg;
+        }
 
         // 初始化 IndexedDB
         function initDB() {
@@ -861,21 +947,35 @@
             }
         }
 
-        // 加载摄像头列表
-        async function loadCameras() {
+        // 加载设备列表（摄像头和麦克风）
+        async function loadDevices() {
             try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const cameras = devices.filter(d => d.kind === 'videoinput');
-                const select = document.getElementById('cameraSelect');
+                // 先请求权限以获取设备标签
+                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                // 填充摄像头列表
+                const cameras = devices.filter(d => d.kind === 'videoinput');
+                const cameraSelect = document.getElementById('cameraSelect');
                 cameras.forEach((camera, index) => {
                     const option = document.createElement('option');
                     option.value = camera.deviceId;
                     option.textContent = camera.label || `摄像头 ${index + 1}`;
-                    select.appendChild(option);
+                    cameraSelect.appendChild(option);
+                });
+                
+                // 填充音频输入列表
+                const audioInputs = devices.filter(d => d.kind === 'audioinput');
+                const audioSelect = document.getElementById('audioSelect');
+                audioInputs.forEach((audio, index) => {
+                    const option = document.createElement('option');
+                    option.value = audio.deviceId;
+                    option.textContent = audio.label || `麦克风 ${index + 1}`;
+                    audioSelect.appendChild(option);
                 });
             } catch (err) {
-                console.error('无法获取摄像头列表:', err);
+                console.error('无法获取设备列表:', err);
             }
         }
 
@@ -897,12 +997,30 @@
             return constraints;
         }
 
-        // 关键：后台录制保持画面流畅
-        function setupBackgroundRecording() {
-            // 使用 Page Visibility API 检测页面隐藏
-            document.addEventListener('visibilitychange', handleVisibilityChange);
+        // 获取音频约束 - 优化收音清晰度
+        function getAudioConstraints() {
+            const audioId = document.getElementById('audioSelect').value;
             
-            // 使用 requestAnimationFrame 保持渲染循环
+            const constraints = {
+                echoCancellation: true,           // 回声消除
+                noiseSuppression: true,           // 降噪
+                autoGainControl: false,           // 关闭自动增益，保持音量稳定
+                sampleRate: 48000,                // 48kHz 采样率（CD 音质）
+                channelCount: 2,                  // 双声道立体声
+                latency: 0.01,                  // 低延迟
+                voiceIsolation: true              // 人声隔离（Chrome 96+）
+            };
+            
+            if (audioId) {
+                constraints.deviceId = { exact: audioId };
+            }
+            
+            return constraints;
+        }
+
+        // 后台录制保持画面流畅
+        function setupBackgroundRecording() {
+            document.addEventListener('visibilitychange', handleVisibilityChange);
             keepVideoAlive();
         }
 
@@ -911,14 +1029,12 @@
             const floatingPip = document.getElementById('floatingPip');
             
             if (isHidden && mediaRecorder && mediaRecorder.state === 'recording') {
-                // 页面隐藏时自动显示悬浮窗
                 if (!floatingPip.classList.contains('active')) {
                     showFloatingPip();
                 }
                 document.getElementById('bgHint').classList.add('show');
                 isBackground = true;
                 
-                // 确保视频流继续播放
                 const pipVideo = document.getElementById('pipVideo');
                 if (pipVideo.srcObject !== stream) {
                     pipVideo.srcObject = stream;
@@ -929,7 +1045,6 @@
                 document.getElementById('bgHint').classList.remove('show');
                 isBackground = false;
                 
-                // 切回前台时，如果悬浮窗开着，同步主预览画面
                 const mainVideo = document.getElementById('preview');
                 if (mainVideo && stream) {
                     mainVideo.srcObject = stream;
@@ -937,20 +1052,16 @@
             }
         }
 
-        // 保持视频活跃的渲染循环
         function keepVideoAlive() {
             const pipVideo = document.getElementById('pipVideo');
-            const mainVideo = document.getElementById('preview');
             
-            // 强制刷新视频帧
             if (isBackground && pipVideo && stream) {
                 pipVideo.play().catch(() => {});
             }
             
-            // 使用 setTimeout 确保在后台也能执行
             setTimeout(() => {
                 animationFrameId = requestAnimationFrame(keepVideoAlive);
-            }, 1000 / 30); // 30fps
+            }, 1000 / 30);
         }
 
         // 开始录像
@@ -958,7 +1069,7 @@
             try {
                 const constraints = {
                     video: getVideoConstraints(),
-                    audio: true
+                    audio: getAudioConstraints()
                 };
                 
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -990,10 +1101,8 @@
                 
                 mediaRecorder.start(1000);
                 
-                // 启动后台保持机制
                 setupBackgroundRecording();
                 
-                // 更新 UI
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('pauseBtn').disabled = false;
@@ -1001,14 +1110,10 @@
                 document.getElementById('nativePipBtn').disabled = false;
                 document.getElementById('recordingIndicator').classList.add('active');
                 
-                // 开始计时
                 startTime = Date.now();
                 timerInterval = setInterval(updateTimer, 1000);
                 
-                // 自动显示悬浮窗（可选）
-                // showFloatingPip();
-                
-                showToast('开始录制');
+                showToast('开始录制（WebM格式，音质优化）');
                 
             } catch (err) {
                 showToast('无法访问摄像头: ' + err.message, 'error');
@@ -1022,12 +1127,10 @@
                 mediaRecorder.stop();
             }
             
-            // 停止所有轨道
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
             
-            // 清理
             clearInterval(timerInterval);
             cancelAnimationFrame(animationFrameId);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -1037,11 +1140,9 @@
             document.getElementById('placeholder').style.display = 'flex';
             document.getElementById('recordingIndicator').classList.remove('active');
             
-            // 关闭所有小窗
             closeFloatingPip();
             closeNativePip();
             
-            // 重置 UI
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = true;
@@ -1059,14 +1160,12 @@
             
             if (isPaused) {
                 mediaRecorder.resume();
-                // 恢复视频轨道
                 stream.getVideoTracks().forEach(track => track.enabled = true);
                 stream.getAudioTracks().forEach(track => track.enabled = true);
                 document.getElementById('pauseText').textContent = '暂停';
                 showToast('继续录制');
             } else {
                 mediaRecorder.pause();
-                // 暂停视频轨道（但保持流活跃）
                 stream.getVideoTracks().forEach(track => track.enabled = false);
                 stream.getAudioTracks().forEach(track => track.enabled = false);
                 document.getElementById('pauseText').textContent = '继续';
@@ -1077,7 +1176,6 @@
 
         // ==================== 悬浮小窗功能 ====================
 
-        // 显示自定义悬浮小窗
         function showFloatingPip() {
             const pip = document.getElementById('floatingPip');
             const pipVideo = document.getElementById('pipVideo');
@@ -1085,10 +1183,8 @@
             pipVideo.srcObject = stream;
             pip.classList.add('active');
             
-            // 确保视频播放
             pipVideo.play().catch(e => console.log('小窗播放失败:', e));
             
-            // 初始化拖拽
             initDrag();
         }
 
@@ -1108,7 +1204,6 @@
             pipVideo.srcObject = null;
         }
 
-        // 拖拽功能
         function initDrag() {
             const pip = document.getElementById('floatingPip');
             const header = document.getElementById('pipHeader');
@@ -1116,7 +1211,6 @@
             let startX, startY, initialLeft, initialTop;
 
             header.addEventListener('mousedown', (e) => {
-                // 如果点击的是按钮，不拖拽
                 if (e.target.closest('.pip-btn')) return;
                 
                 isDragging = true;
@@ -1169,7 +1263,6 @@
             }
         }
 
-        // 监听原生画中画事件
         if ('pictureInPictureEnabled' in document) {
             document.addEventListener('enterpictureinpicture', () => {
                 console.log('进入原生画中画');
@@ -1191,7 +1284,9 @@
                 blob: blob,
                 timestamp: Date.now(),
                 duration: Date.now() - startTime,
-                size: blob.size
+                size: blob.size,
+                format: 'webm',
+                hasMp4: false
             };
             
             const transaction = db.transaction([STORE_NAME], 'readwrite');
@@ -1208,7 +1303,7 @@
             
             loadRecordings();
             updateStorageInfo();
-            showToast('保存成功');
+            showToast('WebM 格式保存成功，如需 MP4 请点击转码按钮');
         }
 
         async function loadRecordings() {
@@ -1253,21 +1348,41 @@
             }
             
             container.innerHTML = recordings.map(rec => `
-                <div class="recording-item">
+                <div class="recording-item" data-id="${rec.id}">
                     <div class="recording-info">
-                        <div class="recording-name">${escapeHtml(rec.filename)}</div>
+                        <div class="recording-name">
+                            ${escapeHtml(rec.filename)}
+                            <span class="format-badge ${rec.hasMp4 ? 'mp4' : 'webm'}">${rec.hasMp4 ? 'MP4' : 'WEBM'}</span>
+                            ${rec.transcoding ? '<span class="transcoding-status">转码中</span>' : ''}
+                        </div>
                         <div class="recording-meta">
                             ${formatDate(rec.timestamp)} · ${formatDuration(rec.duration)} · ${formatBytes(rec.size)}
+                            ${rec.mp4Size ? `· MP4: ${formatBytes(rec.mp4Size)}` : ''}
                         </div>
                     </div>
                     <div class="recording-actions">
-                        <button class="btn-icon" onclick="downloadRecording(${rec.id})" title="下载">
+                        <button class="btn-icon" onclick="downloadRecording(${rec.id}, 'webm')" title="下载 WebM">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                                 <polyline points="7 10 12 15 17 10"/>
                                 <line x1="12" y1="15" x2="12" y2="3"/>
                             </svg>
                         </button>
+                        ${rec.hasMp4 ? `
+                        <button class="btn-icon" onclick="downloadRecording(${rec.id}, 'mp4')" title="下载 MP4" style="color: var(--success);">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </button>
+                        ` : !rec.transcoding ? `
+                        <button class="btn-icon transcode" onclick="transcodeToMp4(${rec.id})" title="转码为 MP4">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v4m0 12v4m-6-6h4m8 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                            </svg>
+                        </button>
+                        ` : ''}
                         <button class="btn-icon" onclick="playRecording(${rec.id})" title="播放">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polygon points="5 3 19 12 5 21 5 3"/>
@@ -1284,7 +1399,143 @@
             `).join('');
         }
 
-        async function downloadRecording(id) {
+        // ==================== 双格式策略：WebM 转 MP4 ====================
+
+        async function transcodeToMp4(id) {
+            // 显示转码进度弹窗
+            const modal = document.getElementById('transcodeModal');
+            const progressText = document.getElementById('transcodeProgress');
+            const progressBar = document.getElementById('transcodeBar');
+            modal.classList.add('active');
+            
+            try {
+                // 获取 WebM 文件
+                const transaction = db.transaction([STORE_NAME], 'readonly');
+                const store = transaction.objectStore(STORE_NAME);
+                const recording = await new Promise((resolve, reject) => {
+                    const request = store.get(id);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                
+                if (!recording) throw new Error('文件不存在');
+                
+                // 标记为转码中
+                recording.transcoding = true;
+                await updateRecording(id, recording);
+                renderTranscodingStatus(id, true);
+                
+                progressText.textContent = '加载 FFmpeg...';
+                progressBar.style.width = '10%';
+                
+                // 初始化 FFmpeg
+                const ffmpegInstance = await initFFmpeg();
+                const { fetchFile } = FFmpegUtil;
+                
+                progressText.textContent = '读取视频文件...';
+                progressBar.style.width = '20%';
+                
+                // 写入输入文件
+                const inputName = 'input.webm';
+                const outputName = 'output.mp4';
+                await ffmpegInstance.writeFile(inputName, await fetchFile(recording.blob));
+                
+                progressText.textContent = '转码中（VP9 → H.264）...';
+                progressBar.style.width = '40%';
+                
+                // 执行转码：WebM (VP9/Opus) → MP4 (H.264/AAC)
+                // 使用 fast 预设平衡速度和质量，crf 23 为高质量
+                await ffmpegInstance.exec([
+                    '-i', inputName,
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '23',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    '-movflags', '+faststart',  // 支持网页渐进播放
+                    '-y', outputName
+                ]);
+                
+                progressText.textContent = '读取输出文件...';
+                progressBar.style.width = '80%';
+                
+                // 读取输出文件
+                const mp4Data = await ffmpegInstance.readFile(outputName);
+                const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+                
+                progressText.textContent = '保存到数据库...';
+                progressBar.style.width = '90%';
+                
+                // 更新数据库记录
+                recording.mp4Blob = mp4Blob;
+                recording.mp4Size = mp4Blob.size;
+                recording.hasMp4 = true;
+                recording.transcoding = false;
+                recording.mp4Filename = recording.filename.replace('.webm', '.mp4');
+                
+                await updateRecording(id, recording);
+                
+                progressBar.style.width = '100%';
+                progressText.textContent = '完成！';
+                
+                setTimeout(() => {
+                    modal.classList.remove('active');
+                    loadRecordings();
+                    showToast('MP4 转码成功，现在可以下载了');
+                }, 500);
+                
+                // 清理 FFmpeg 文件系统
+                await ffmpegInstance.deleteFile(inputName);
+                await ffmpegInstance.deleteFile(outputName);
+                
+            } catch (err) {
+                console.error('转码失败:', err);
+                modal.classList.remove('active');
+                
+                // 取消转码状态
+                const transaction = db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const recording = await new Promise((resolve) => {
+                    const request = store.get(id);
+                    request.onsuccess = () => resolve(request.result);
+                });
+                if (recording) {
+                    recording.transcoding = false;
+                    await updateRecording(id, recording);
+                }
+                renderTranscodingStatus(id, false);
+                
+                showToast('转码失败: ' + err.message, 'error');
+            }
+        }
+
+        async function updateRecording(id, data) {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            data.id = id;
+            return new Promise((resolve, reject) => {
+                const request = store.put(data);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        function renderTranscodingStatus(id, isTranscoding) {
+            const item = document.querySelector(`.recording-item[data-id="${id}"]`);
+            if (item) {
+                const nameDiv = item.querySelector('.recording-name');
+                if (isTranscoding) {
+                    if (!nameDiv.querySelector('.transcoding-status')) {
+                        nameDiv.innerHTML += '<span class="transcoding-status">转码中</span>';
+                    }
+                } else {
+                    const status = nameDiv.querySelector('.transcoding-status');
+                    if (status) status.remove();
+                }
+            }
+        }
+
+        async function downloadRecording(id, format = 'webm') {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
             const recording = await new Promise((resolve, reject) => {
@@ -1293,17 +1544,30 @@
                 request.onerror = () => reject(request.error);
             });
             
-            if (recording) {
-                const url = URL.createObjectURL(recording.blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = recording.filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showToast('开始下载');
+            if (!recording) {
+                showToast('文件不存在');
+                return;
             }
+            
+            let blob, filename;
+            if (format === 'mp4' && recording.hasMp4) {
+                blob = recording.mp4Blob;
+                filename = recording.mp4Filename;
+            } else {
+                blob = recording.blob;
+                filename = recording.filename;
+            }
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast(`开始下载 ${format.toUpperCase()}`);
         }
 
         async function playRecording(id) {
@@ -1316,7 +1580,9 @@
             });
             
             if (recording) {
-                const url = URL.createObjectURL(recording.blob);
+                // 优先播放 MP4（兼容性更好），如果没有则播放 WebM
+                const blob = recording.hasMp4 ? recording.mp4Blob : recording.blob;
+                const url = URL.createObjectURL(blob);
                 window.open(url, '_blank');
             }
         }
@@ -1412,6 +1678,7 @@
             if (e.code === 'Escape') {
                 closeFloatingPip();
                 closeNativePip();
+                document.getElementById('transcodeModal').classList.remove('active');
             }
             if (e.ctrlKey && e.code === 'KeyS') {
                 e.preventDefault();
@@ -1421,7 +1688,6 @@
             }
             if (e.code === 'Tab') {
                 e.preventDefault();
-                // 隐藏/显示主界面（专注模式）
                 document.body.style.opacity = document.body.style.opacity === '0' ? '1' : '0';
             }
         });
@@ -1429,7 +1695,7 @@
         // 初始化
         window.addEventListener('load', async () => {
             await initDB();
-            await loadCameras();
+            await loadDevices();
             await loadRecordings();
             await updateStorageInfo();
             
