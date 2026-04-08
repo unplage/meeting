@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>会议助手 - 智能录像工具</title>
+    <title>会议助手 Pro - 后台录制版</title>
+	<link rel="manifest" href="./manifest.json">
     <style>
         * {
             margin: 0;
@@ -412,7 +413,8 @@
             opacity: 0.3;
         }
 
-        .pip-mode {
+        /* 可调整大小的悬浮小窗 - 始终置顶 */
+        .floating-pip {
             position: fixed;
             bottom: 20px;
             right: 20px;
@@ -421,47 +423,98 @@
             background: #000;
             border-radius: 12px;
             overflow: hidden;
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.3);
-            z-index: 999;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.4);
+            z-index: 2147483647; /* 最高层级 */
             display: none;
             border: 2px solid var(--primary);
+            resize: both; /* 允许手动调整大小 */
+            min-width: 200px;
+            min-height: 120px;
+            max-width: 800px;
+            max-height: 600px;
         }
 
-        .pip-mode.active {
+        .floating-pip.active {
             display: block;
         }
 
-        .pip-mode video {
+        .floating-pip video {
             width: 100%;
-            height: 100%;
+            height: calc(100% - 36px);
             object-fit: cover;
+            pointer-events: none; /* 防止视频拦截鼠标事件 */
         }
 
         .pip-header {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
-            padding: 8px 12px;
+            height: 36px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.7));
+            padding: 0 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: move;
+            user-select: none;
         }
 
         .pip-title {
             color: white;
             font-size: 12px;
             font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
-        .pip-close {
-            background: none;
+        .pip-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .pip-btn {
+            background: rgba(255,255,255,0.2);
             border: none;
             color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 18px;
-            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+
+        .pip-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        /* 调整大小的手柄 */
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            cursor: se-resize;
+            background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.5) 50%);
+            border-bottom-right-radius: 10px;
+        }
+
+        /* 原生 Picture-in-Picture 备用方案 */
+        .native-pip-notice {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            text-align: center;
+            display: none;
         }
 
         .toast {
@@ -526,6 +579,38 @@
             font-family: monospace;
             font-size: 11px;
         }
+
+        /* 后台运行提示 */
+        .background-hint {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--success);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 999;
+            animation: slideIn 0.3s ease;
+        }
+
+        .background-hint.show {
+            display: flex;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -573,11 +658,19 @@
                             </svg>
                             <span id="pauseText">暂停</span>
                         </button>
-                        <button class="btn btn-secondary" id="pipBtn" onclick="togglePip()" disabled>
+                        <button class="btn btn-secondary" id="pipBtn" onclick="toggleFloatingPip()" disabled>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
                             </svg>
-                            小窗模式
+                            悬浮小窗
+                        </button>
+                        <button class="btn btn-secondary" id="nativePipBtn" onclick="toggleNativePip()" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                                <line x1="8" y1="21" x2="16" y2="21"/>
+                                <line x1="12" y1="17" x2="12" y2="21"/>
+                            </svg>
+                            系统画中画
                         </button>
                     </div>
                 </div>
@@ -659,21 +752,38 @@
                     <div class="shortcut-hint">
                         <strong>快捷键</strong><br>
                         <kbd>空格</kbd> 暂停/继续<br>
-                        <kbd>Esc</kbd> 退出小窗模式<br>
-                        <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存录像
+                        <kbd>Esc</kbd> 关闭小窗<br>
+                        <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存录像<br>
+                        <kbd>Tab</kbd> 隐藏/显示界面
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 小窗模式 -->
-    <div class="pip-mode" id="pipMode">
-        <div class="pip-header">
-            <span class="pip-title">正在录制</span>
-            <button class="pip-close" onclick="closePip()">×</button>
+    <!-- 可拖拽调整大小的悬浮小窗 -->
+    <div class="floating-pip" id="floatingPip">
+        <div class="pip-header" id="pipHeader">
+            <span class="pip-title">
+                <span style="color: #ef4444; animation: blink 1s infinite;">●</span>
+                录制中
+            </span>
+            <div class="pip-controls">
+                <button class="pip-btn" onclick="togglePause()" title="暂停/继续">⏸</button>
+                <button class="pip-btn" onclick="stopRecording()" title="停止">⏹</button>
+                <button class="pip-btn" onclick="closeFloatingPip()" title="关闭">×</button>
+            </div>
         </div>
         <video id="pipVideo" autoplay muted playsinline></video>
+        <div class="resize-handle"></div>
+    </div>
+
+    <!-- 后台运行提示 -->
+    <div class="background-hint" id="bgHint">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        后台录制中 - 画面已移至悬浮窗
     </div>
 
     <!-- 删除确认弹窗 -->
@@ -713,6 +823,8 @@
         let isPaused = false;
         let currentRecordingId = null;
         let fileToDelete = null;
+        let isBackground = false;
+        let animationFrameId = null;
 
         // 初始化 IndexedDB
         function initDB() {
@@ -774,7 +886,8 @@
             
             const constraints = {
                 width: { ideal: parseInt(quality) },
-                height: { ideal: parseInt(quality) * 9 / 16 }
+                height: { ideal: parseInt(quality) * 9 / 16 },
+                frameRate: { ideal: 30 }
             };
             
             if (cameraId) {
@@ -782,6 +895,62 @@
             }
             
             return constraints;
+        }
+
+        // 关键：后台录制保持画面流畅
+        function setupBackgroundRecording() {
+            // 使用 Page Visibility API 检测页面隐藏
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            
+            // 使用 requestAnimationFrame 保持渲染循环
+            keepVideoAlive();
+        }
+
+        function handleVisibilityChange() {
+            const isHidden = document.hidden;
+            const floatingPip = document.getElementById('floatingPip');
+            
+            if (isHidden && mediaRecorder && mediaRecorder.state === 'recording') {
+                // 页面隐藏时自动显示悬浮窗
+                if (!floatingPip.classList.contains('active')) {
+                    showFloatingPip();
+                }
+                document.getElementById('bgHint').classList.add('show');
+                isBackground = true;
+                
+                // 确保视频流继续播放
+                const pipVideo = document.getElementById('pipVideo');
+                if (pipVideo.srcObject !== stream) {
+                    pipVideo.srcObject = stream;
+                }
+                pipVideo.play().catch(e => console.log('后台播放失败:', e));
+                
+            } else {
+                document.getElementById('bgHint').classList.remove('show');
+                isBackground = false;
+                
+                // 切回前台时，如果悬浮窗开着，同步主预览画面
+                const mainVideo = document.getElementById('preview');
+                if (mainVideo && stream) {
+                    mainVideo.srcObject = stream;
+                }
+            }
+        }
+
+        // 保持视频活跃的渲染循环
+        function keepVideoAlive() {
+            const pipVideo = document.getElementById('pipVideo');
+            const mainVideo = document.getElementById('preview');
+            
+            // 强制刷新视频帧
+            if (isBackground && pipVideo && stream) {
+                pipVideo.play().catch(() => {});
+            }
+            
+            // 使用 setTimeout 确保在后台也能执行
+            setTimeout(() => {
+                animationFrameId = requestAnimationFrame(keepVideoAlive);
+            }, 1000 / 30); // 30fps
         }
 
         // 开始录像
@@ -819,22 +988,25 @@
                 
                 mediaRecorder.onstop = saveRecording;
                 
-                mediaRecorder.start(1000); // 每秒收集一次数据
+                mediaRecorder.start(1000);
+                
+                // 启动后台保持机制
+                setupBackgroundRecording();
                 
                 // 更新 UI
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('pauseBtn').disabled = false;
                 document.getElementById('pipBtn').disabled = false;
+                document.getElementById('nativePipBtn').disabled = false;
                 document.getElementById('recordingIndicator').classList.add('active');
                 
                 // 开始计时
                 startTime = Date.now();
                 timerInterval = setInterval(updateTimer, 1000);
                 
-                // 同步小窗视频源
-                const pipVideo = document.getElementById('pipVideo');
-                pipVideo.srcObject = stream;
+                // 自动显示悬浮窗（可选）
+                // showFloatingPip();
                 
                 showToast('开始录制');
                 
@@ -857,21 +1029,26 @@
             
             // 清理
             clearInterval(timerInterval);
-            document.getElementById('preview').srcObject = null;
-            document.getElementById('pipVideo').srcObject = null;
+            cancelAnimationFrame(animationFrameId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            
+            const mainVideo = document.getElementById('preview');
+            mainVideo.srcObject = null;
             document.getElementById('placeholder').style.display = 'flex';
             document.getElementById('recordingIndicator').classList.remove('active');
+            
+            // 关闭所有小窗
+            closeFloatingPip();
+            closeNativePip();
             
             // 重置 UI
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = true;
             document.getElementById('pipBtn').disabled = true;
+            document.getElementById('nativePipBtn').disabled = true;
             document.getElementById('pauseText').textContent = '暂停';
             isPaused = false;
-            
-            // 关闭小窗
-            closePip();
             
             showToast('录制完成，正在保存...');
         }
@@ -882,19 +1059,128 @@
             
             if (isPaused) {
                 mediaRecorder.resume();
-                stream.getTracks().forEach(track => track.enabled = true);
+                // 恢复视频轨道
+                stream.getVideoTracks().forEach(track => track.enabled = true);
+                stream.getAudioTracks().forEach(track => track.enabled = true);
                 document.getElementById('pauseText').textContent = '暂停';
                 showToast('继续录制');
             } else {
                 mediaRecorder.pause();
-                stream.getTracks().forEach(track => track.enabled = false);
+                // 暂停视频轨道（但保持流活跃）
+                stream.getVideoTracks().forEach(track => track.enabled = false);
+                stream.getAudioTracks().forEach(track => track.enabled = false);
                 document.getElementById('pauseText').textContent = '继续';
                 showToast('已暂停');
             }
             isPaused = !isPaused;
         }
 
-        // 保存录像到 IndexedDB
+        // ==================== 悬浮小窗功能 ====================
+
+        // 显示自定义悬浮小窗
+        function showFloatingPip() {
+            const pip = document.getElementById('floatingPip');
+            const pipVideo = document.getElementById('pipVideo');
+            
+            pipVideo.srcObject = stream;
+            pip.classList.add('active');
+            
+            // 确保视频播放
+            pipVideo.play().catch(e => console.log('小窗播放失败:', e));
+            
+            // 初始化拖拽
+            initDrag();
+        }
+
+        function toggleFloatingPip() {
+            const pip = document.getElementById('floatingPip');
+            if (pip.classList.contains('active')) {
+                closeFloatingPip();
+            } else {
+                showFloatingPip();
+            }
+        }
+
+        function closeFloatingPip() {
+            const pip = document.getElementById('floatingPip');
+            const pipVideo = document.getElementById('pipVideo');
+            pip.classList.remove('active');
+            pipVideo.srcObject = null;
+        }
+
+        // 拖拽功能
+        function initDrag() {
+            const pip = document.getElementById('floatingPip');
+            const header = document.getElementById('pipHeader');
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+
+            header.addEventListener('mousedown', (e) => {
+                // 如果点击的是按钮，不拖拽
+                if (e.target.closest('.pip-btn')) return;
+                
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                initialLeft = pip.offsetLeft;
+                initialTop = pip.offsetTop;
+                
+                header.style.cursor = 'grabbing';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                pip.style.left = `${initialLeft + dx}px`;
+                pip.style.top = `${initialTop + dy}px`;
+                pip.style.right = 'auto';
+                pip.style.bottom = 'auto';
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                header.style.cursor = 'move';
+            });
+        }
+
+        // ==================== 原生画中画功能 ====================
+
+        async function toggleNativePip() {
+            const video = document.getElementById('preview');
+            
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            } else {
+                try {
+                    await video.requestPictureInPicture();
+                    showToast('已进入系统画中画模式');
+                } catch (err) {
+                    showToast('浏览器不支持画中画或已被禁用');
+                }
+            }
+        }
+
+        function closeNativePip() {
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture();
+            }
+        }
+
+        // 监听原生画中画事件
+        if ('pictureInPictureEnabled' in document) {
+            document.addEventListener('enterpictureinpicture', () => {
+                console.log('进入原生画中画');
+            });
+            document.addEventListener('leavepictureinpicture', () => {
+                console.log('退出原生画中画');
+            });
+        }
+
+        // ==================== IndexedDB 操作 ====================
+
         async function saveRecording() {
             const blob = new Blob(recordedChunks, { type: 'video/webm' });
             const prefix = document.getElementById('namePrefix').value || '会议录像';
@@ -916,7 +1202,6 @@
                 request.onerror = () => reject(request.error);
             });
             
-            // 重置计时器和大小显示
             document.getElementById('duration').textContent = '00:00';
             document.getElementById('size').textContent = '0 MB';
             recordedChunks = [];
@@ -926,7 +1211,6 @@
             showToast('保存成功');
         }
 
-        // 加载录像列表
         async function loadRecordings() {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
@@ -950,7 +1234,6 @@
             renderRecordings(recordings);
         }
 
-        // 渲染录像列表
         function renderRecordings(recordings) {
             const container = document.getElementById('recordingsList');
             document.getElementById('fileCount').textContent = `${recordings.length} 个文件`;
@@ -1001,7 +1284,6 @@
             `).join('');
         }
 
-        // 下载录像
         async function downloadRecording(id) {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
@@ -1024,7 +1306,6 @@
             }
         }
 
-        // 播放录像（在新标签页）
         async function playRecording(id) {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
@@ -1040,20 +1321,17 @@
             }
         }
 
-        // 显示删除确认
         function showDeleteModal(id, filename) {
             fileToDelete = id;
             document.getElementById('deleteFileName').textContent = filename;
             document.getElementById('deleteModal').classList.add('active');
         }
 
-        // 关闭删除确认
         function closeDeleteModal() {
             document.getElementById('deleteModal').classList.remove('active');
             fileToDelete = null;
         }
 
-        // 确认删除
         async function confirmDelete() {
             if (!fileToDelete) return;
             
@@ -1071,22 +1349,7 @@
             showToast('已删除');
         }
 
-        // 小窗模式
-        function togglePip() {
-            const pip = document.getElementById('pipMode');
-            if (pip.classList.contains('active')) {
-                closePip();
-            } else {
-                pip.classList.add('active');
-                showToast('已进入小窗模式，可以切换到其他标签页');
-            }
-        }
-
-        function closePip() {
-            document.getElementById('pipMode').classList.remove('active');
-        }
-
-        // 更新计时器
+        // 工具函数
         function updateTimer() {
             const elapsed = Date.now() - startTime;
             const timeStr = formatDuration(elapsed);
@@ -1094,13 +1357,11 @@
             document.getElementById('recordTime').textContent = timeStr;
         }
 
-        // 更新录制大小
         function updateRecordingSize() {
             const totalSize = recordedChunks.reduce((sum, chunk) => sum + chunk.size, 0);
             document.getElementById('size').textContent = formatBytes(totalSize);
         }
 
-        // 工具函数
         function formatDuration(ms) {
             const totalSeconds = Math.floor(ms / 1000);
             const minutes = Math.floor(totalSeconds / 60);
@@ -1149,7 +1410,8 @@
                 }
             }
             if (e.code === 'Escape') {
-                closePip();
+                closeFloatingPip();
+                closeNativePip();
             }
             if (e.ctrlKey && e.code === 'KeyS') {
                 e.preventDefault();
@@ -1157,13 +1419,10 @@
                     stopRecording();
                 }
             }
-        });
-
-        // 页面可见性变化处理（后台运行支持）
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden && mediaRecorder && mediaRecorder.state === 'recording') {
-                // 页面隐藏时继续录制，但可以选择降低帧率以节省资源
-                console.log('应用进入后台，继续录制中...');
+            if (e.code === 'Tab') {
+                e.preventDefault();
+                // 隐藏/显示主界面（专注模式）
+                document.body.style.opacity = document.body.style.opacity === '0' ? '1' : '0';
             }
         });
 
@@ -1174,7 +1433,6 @@
             await loadRecordings();
             await updateStorageInfo();
             
-            // 定期检查存储空间
             setInterval(updateStorageInfo, 30000);
         });
 
@@ -1183,6 +1441,7 @@
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
+            cancelAnimationFrame(animationFrameId);
         });
     </script>
 </body>
