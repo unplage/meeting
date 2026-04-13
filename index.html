@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>会议助手 Pro - 后台录制版（转码修复）</title>
+    <title>会议助手 Pro - 后台录制版</title>
     <link rel="manifest" href="./manifest.json">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -72,7 +72,6 @@
         .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
         .btn-secondary:hover:not(:disabled) { background: var(--border); }
         .btn-success { background: var(--success); color: white; }
-        .btn-warning { background: var(--warning); color: white; }
         .settings-panel {
             background: var(--card); border-radius: 12px; padding: 20px;
             box-shadow: var(--shadow); height: fit-content;
@@ -103,11 +102,6 @@
         }
         .btn-icon:hover { background: var(--border); }
         .btn-icon.delete:hover { background: var(--danger); color: white; }
-        .btn-icon.transcode { color: var(--warning); }
-        .btn-icon.transcode:hover { background: var(--warning); color: white; }
-        .transcoding-status { font-size: 11px; color: var(--warning); margin-left: 8px; display: inline-flex; align-items: center; gap: 4px; }
-        .transcoding-status::before { content: ""; width: 8px; height: 8px; border: 2px solid var(--warning); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.5);
             display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px);
@@ -149,12 +143,10 @@
         .shortcut-hint kbd { background: white; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-family: monospace; }
         .format-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
         .format-badge.webm { background: #dbeafe; color: #1e40af; }
-        .format-badge.mp4 { background: #dcfce7; color: #166534; }
-        .btn-icon.disabled { opacity: 0.4; pointer-events: none; }
     </style>
 </head>
 <body>
-<header><div class="container"><h1>会议助手 Pro · 稳定转码版</h1></div></header>
+<header><div class="container"><h1>会议助手 Pro</h1></div></header>
 <div class="container">
     <div class="main-grid">
         <div class="left-column">
@@ -194,40 +186,13 @@
 <div class="floating-pip" id="floatingPip"><div class="pip-header" id="pipHeader"><span class="pip-title">🔴 REC</span><div class="pip-controls"><button class="pip-btn" onclick="togglePause()">⏸</button><button class="pip-btn" onclick="stopRecording()">⏹</button><button class="pip-btn" onclick="closeFloatingPip()">×</button></div></div><video id="pipVideo" autoplay muted playsinline></video><div class="resize-handle"></div></div>
 <div class="background-hint" id="bgHint">📌 后台录制中，画面已移至悬浮窗</div>
 <div class="modal-overlay" id="deleteModal"><div class="modal"><h4>⚠️ 确认删除</h4><p>确定要删除 "<span id="deleteFileName"></span>" 吗？</p><div class="modal-actions"><button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button><button class="btn btn-danger" onclick="confirmDelete()">删除</button></div></div></div>
-<div class="modal-overlay" id="transcodeModal"><div class="modal"><h4 style="color:var(--warning);">🔄 正在转码为 MP4</h4><p>请稍候，WebM → MP4 (H.264/AAC)<br><span id="transcodeProgress">初始化 FFmpeg...</span></p><div style="width:100%; height:6px; background:var(--border); border-radius:3px;"><div id="transcodeBar" style="width:0%; height:100%; background:var(--warning); transition:width 0.2s;"></div></div></div></div>
 <div class="toast" id="toast"></div>
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/umd/ffmpeg.js"></script>
-<script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 <script>
     // ---------- 全局变量 ----------
     let db, mediaRecorder, recordedChunks = [], stream, startTime, timerInterval, isPaused = false, fileToDelete = null;
-    let isBackground = false, animationFrameId = null, ffmpeg = null;
-    let isTranscodingLock = false;          // 转码锁，防止并发
-    let ffmpegReady = false;
+    let isBackground = false, animationFrameId = null;
     
     const DB_NAME = 'MeetingRecorderDB', DB_VERSION = 1, STORE_NAME = 'recordings';
-    
-    // ---------- 修复后的 FFmpeg 初始化 ----------
-    async function initFFmpeg() {
-        if (ffmpeg) return ffmpeg;
-        // 检查全局库是否存在
-        if (!window.FFmpeg) throw new Error('FFmpeg 核心库未加载，请检查网络后刷新重试');
-        if (!window.FFmpegUtil || !window.FFmpegUtil.fetchFile) throw new Error('FFmpegUtil 工具库未加载，无法转码');
-        
-        const FFmpegClass = window.FFmpeg;
-        ffmpeg = new FFmpegClass();
-        ffmpeg.on('log', ({ message }) => console.log('[FFmpeg]', message));
-        // 可选加载进度
-        await ffmpeg.load();
-        ffmpegReady = true;
-        console.log('FFmpeg 已就绪');
-        return ffmpeg;
-    }
-    
-    // 预加载 FFmpeg (静默，提高转码首体验)
-    window.addEventListener('load', () => {
-        initFFmpeg().catch(e => console.warn('FFmpeg 预加载失败，转码时将重试:', e));
-    });
     
     // ---------- IndexedDB ----------
     function initDB() {
@@ -378,7 +343,7 @@
     }
     function toggleFloatingPip() { const pip = document.getElementById('floatingPip'); pip.classList.contains('active') ? closeFloatingPip() : showFloatingPip(); }
     function closeFloatingPip() { const pip = document.getElementById('floatingPip'); pip.classList.remove('active'); if(pip.querySelector('video')) pip.querySelector('video').srcObject = null; }
-    function initDrag() { /* 保持原有拖拽逻辑不变，简单实现 */ const pip = document.getElementById('floatingPip'), header = document.getElementById('pipHeader'); let dragging=false, startX,startY, left,top; header.onmousedown = (e) => { if(e.target.closest('.pip-btn')) return; dragging=true; startX=e.clientX; startY=e.clientY; left=pip.offsetLeft; top=pip.offsetTop; header.style.cursor='grabbing'; }; document.onmousemove = (e) => { if(!dragging) return; pip.style.left = `${left + e.clientX - startX}px`; pip.style.top = `${top + e.clientY - startY}px`; pip.style.right='auto'; pip.style.bottom='auto'; }; document.onmouseup = () => { dragging=false; header.style.cursor='move'; }; }
+    function initDrag() { const pip = document.getElementById('floatingPip'), header = document.getElementById('pipHeader'); let dragging=false, startX,startY, left,top; header.onmousedown = (e) => { if(e.target.closest('.pip-btn')) return; dragging=true; startX=e.clientX; startY=e.clientY; left=pip.offsetLeft; top=pip.offsetTop; header.style.cursor='grabbing'; }; document.onmousemove = (e) => { if(!dragging) return; pip.style.left = `${left + e.clientX - startX}px`; pip.style.top = `${top + e.clientY - startY}px`; pip.style.right='auto'; pip.style.bottom='auto'; }; document.onmouseup = () => { dragging=false; header.style.cursor='move'; }; }
     async function toggleNativePip() { const video = document.getElementById('preview'); if(document.pictureInPictureElement) await document.exitPictureInPicture(); else await video.requestPictureInPicture(); }
     function closeNativePip() { if(document.pictureInPictureElement) document.exitPictureInPicture(); }
     
@@ -387,7 +352,7 @@
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
         const prefix = document.getElementById('namePrefix').value || '会议录像';
         const filename = `${prefix}_${new Date().toLocaleString('zh-CN').replace(/[/:]/g, '-')}.webm`;
-        const recording = { filename, blob, timestamp: Date.now(), duration: Date.now()-startTime, size: blob.size, format: 'webm', hasMp4: false };
+        const recording = { filename, blob, timestamp: Date.now(), duration: Date.now()-startTime, size: blob.size, format: 'webm' };
         const tx = db.transaction([STORE_NAME], 'readwrite');
         await new Promise((res,rej)=>{ const req = tx.objectStore(STORE_NAME).add(recording); req.onsuccess = ()=>res(); req.onerror = ()=>rej(req.error); });
         document.getElementById('duration').textContent = '00:00';
@@ -395,7 +360,7 @@
         recordedChunks = [];
         loadRecordings();
         updateStorageInfo();
-        showToast('WebM 已保存，可转码为 MP4');
+        showToast('录制已保存');
     }
     
     async function loadRecordings() {
@@ -414,14 +379,12 @@
                 <div class="recording-info">
                     <div class="recording-name">
                         ${escapeHtml(rec.filename)}
-                        <span class="format-badge ${rec.hasMp4 ? 'mp4' : 'webm'}">${rec.hasMp4 ? 'MP4' : 'WEBM'}</span>
-                        ${rec.transcoding ? '<span class="transcoding-status">转码中</span>' : ''}
+                        <span class="format-badge webm">WEBM</span>
                     </div>
-                    <div class="recording-meta">${formatDate(rec.timestamp)} · ${formatDuration(rec.duration)} · ${formatBytes(rec.size)} ${rec.mp4Size ? `· MP4: ${formatBytes(rec.mp4Size)}` : ''}</div>
+                    <div class="recording-meta">${formatDate(rec.timestamp)} · ${formatDuration(rec.duration)} · ${formatBytes(rec.size)}</div>
                 </div>
                 <div class="recording-actions">
-                    <button class="btn-icon" onclick="downloadRecording(${rec.id}, 'webm')" title="下载 WebM">📥</button>
-                    ${rec.hasMp4 ? `<button class="btn-icon" onclick="downloadRecording(${rec.id}, 'mp4')" title="下载 MP4" style="color:var(--success);">🎬</button>` : (!rec.transcoding ? `<button class="btn-icon transcode" onclick="transcodeToMp4(${rec.id})" title="转码为 MP4">🔄</button>` : `<button class="btn-icon disabled" disabled>⏳</button>`)}
+                    <button class="btn-icon" onclick="downloadRecording(${rec.id})" title="下载">📥</button>
                     <button class="btn-icon" onclick="playRecording(${rec.id})" title="播放">▶️</button>
                     <button class="btn-icon delete" onclick="showDeleteModal(${rec.id}, '${escapeHtml(rec.filename)}')" title="删除">🗑️</button>
                 </div>
@@ -429,117 +392,22 @@
         `).join('');
     }
     
-    // ---------- 转码核心（修复版 + 锁 + 进度） ----------
-    async function transcodeToMp4(id) {
-        if(isTranscodingLock) { showToast('已有转码任务进行中，请稍后重试', 'error'); return; }
-        const modal = document.getElementById('transcodeModal');
-        const progressSpan = document.getElementById('transcodeProgress');
-        const progressBar = document.getElementById('transcodeBar');
-        modal.classList.add('active');
-        progressSpan.innerText = '准备环境...';
-        progressBar.style.width = '5%';
-        
-        try {
-            // 获取原始记录
-            const txRead = db.transaction([STORE_NAME], 'readonly');
-            const storeRead = txRead.objectStore(STORE_NAME);
-            const recording = await new Promise((res,rej)=>{ const req = storeRead.get(id); req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error); });
-            if(!recording) throw new Error('文件不存在');
-            if(recording.hasMp4) { modal.classList.remove('active'); showToast('已有 MP4 版本，无需重复转码'); return; }
-            if(recording.transcoding) { modal.classList.remove('active'); showToast('该文件正在转码中'); return; }
-            
-            // 标记转码中
-            recording.transcoding = true;
-            const txUp = db.transaction([STORE_NAME], 'readwrite');
-            const storeUp = txUp.objectStore(STORE_NAME);
-            await new Promise((res,rej)=>{ const req = storeUp.put(recording); req.onsuccess=()=>res(); req.onerror=()=>rej(req.error); });
-            loadRecordings(); // 刷新UI显示转码中
-            
-            isTranscodingLock = true;
-            progressSpan.innerText = '加载 FFmpeg 内核...';
-            progressBar.style.width = '15%';
-            const ffmpegInstance = await initFFmpeg();
-            
-            // 监听进度
-            ffmpegInstance.on('progress', ({ progress, time }) => {
-                const percent = Math.round(progress * 100);
-                progressBar.style.width = Math.min(percent, 98) + '%';
-                progressSpan.innerText = `转码中 ${percent}% ...`;
-            });
-            
-            progressSpan.innerText = '准备转码参数...';
-            progressBar.style.width = '30%';
-            const { fetchFile } = window.FFmpegUtil;
-            const inputFile = 'input.webm';
-            const outputFile = 'output.mp4';
-            await ffmpegInstance.writeFile(inputFile, await fetchFile(recording.blob));
-            
-            progressSpan.innerText = '转码中 (VP9→H.264) 请稍候...';
-            progressBar.style.width = '40%';
-            await ffmpegInstance.exec([
-                '-i', inputFile,
-                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-                '-c:a', 'aac', '-b:a', '192k',
-                '-movflags', '+faststart',
-                '-y', outputFile
-            ]);
-            
-            progressSpan.innerText = '生成 MP4 文件...';
-            progressBar.style.width = '85%';
-            const mp4Data = await ffmpegInstance.readFile(outputFile);
-            const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
-            
-            // 更新数据库
-            recording.mp4Blob = mp4Blob;
-            recording.mp4Size = mp4Blob.size;
-            recording.hasMp4 = true;
-            recording.transcoding = false;
-            recording.mp4Filename = recording.filename.replace('.webm', '.mp4');
-            const txFinal = db.transaction([STORE_NAME], 'readwrite');
-            const storeFinal = txFinal.objectStore(STORE_NAME);
-            await new Promise((res,rej)=>{ const req = storeFinal.put(recording); req.onsuccess=()=>res(); req.onerror=()=>rej(req.error); });
-            
-            // 清理临时文件
-            await ffmpegInstance.deleteFile(inputFile).catch(e=>console.warn);
-            await ffmpegInstance.deleteFile(outputFile).catch(e=>console.warn);
-            progressBar.style.width = '100%';
-            progressSpan.innerText = '完成！';
-            setTimeout(() => { modal.classList.remove('active'); loadRecordings(); showToast('MP4 转码成功，可下载编辑'); }, 600);
-        } catch (err) {
-            console.error('转码失败:', err);
-            modal.classList.remove('active');
-            // 恢复转码标记
-            try {
-                const txRoll = db.transaction([STORE_NAME], 'readwrite');
-                const storeRoll = txRoll.objectStore(STORE_NAME);
-                const rec = await new Promise(res=>{ const req = storeRoll.get(id); req.onsuccess=()=>res(req.result); });
-                if(rec) { rec.transcoding = false; await new Promise(res=>{ const req = storeRoll.put(rec); req.onsuccess=()=>res(); }); }
-                loadRecordings();
-            } catch(e) {}
-            showToast('转码失败: ' + (err.message || '未知错误，请刷新后重试'), 'error');
-        } finally {
-            isTranscodingLock = false;
-        }
-    }
-    
-    async function updateRecording(id, data) { const tx = db.transaction([STORE_NAME], 'readwrite'); data.id=id; await new Promise((res,rej)=>{ const req=tx.objectStore(STORE_NAME).put(data); req.onsuccess=res; req.onerror=rej; }); }
-    async function downloadRecording(id, format) {
+    async function downloadRecording(id) {
         const tx = db.transaction([STORE_NAME], 'readonly');
         const rec = await new Promise(res=>{ const req=tx.objectStore(STORE_NAME).get(id); req.onsuccess=()=>res(req.result); });
         if(!rec) return showToast('文件不存在');
-        let blob, name;
-        if(format==='mp4' && rec.hasMp4) { blob = rec.mp4Blob; name = rec.mp4Filename; }
-        else { blob = rec.blob; name = rec.filename; }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        const url = URL.createObjectURL(rec.blob);
+        const a = document.createElement('a'); a.href = url; a.download = rec.filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast(`下载 ${format.toUpperCase()}`);
+        showToast('下载已开始');
     }
+    
     async function playRecording(id) {
         const tx = db.transaction([STORE_NAME], 'readonly');
         const rec = await new Promise(res=>{ const req=tx.objectStore(STORE_NAME).get(id); req.onsuccess=()=>res(req.result); });
-        if(rec) { const blob = rec.hasMp4 ? rec.mp4Blob : rec.blob; const url = URL.createObjectURL(blob); window.open(url, '_blank'); }
+        if(rec) { const url = URL.createObjectURL(rec.blob); window.open(url, '_blank'); }
     }
+    
     function showDeleteModal(id, name) { fileToDelete = id; document.getElementById('deleteFileName').textContent = name; document.getElementById('deleteModal').classList.add('active'); }
     function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('active'); fileToDelete = null; }
     async function confirmDelete() { if(!fileToDelete) return; const tx = db.transaction([STORE_NAME], 'readwrite'); await new Promise((res,rej)=>{ const req=tx.objectStore(STORE_NAME).delete(fileToDelete); req.onsuccess=res; req.onerror=rej; }); closeDeleteModal(); loadRecordings(); updateStorageInfo(); showToast('已删除'); }
@@ -556,7 +424,7 @@
     // 快捷键
     document.addEventListener('keydown', (e) => {
         if(e.code === 'Space' && !e.target.matches('input,select')) { e.preventDefault(); if(!document.getElementById('pauseBtn').disabled) togglePause(); }
-        if(e.code === 'Escape') { closeFloatingPip(); closeNativePip(); document.getElementById('transcodeModal').classList.remove('active'); }
+        if(e.code === 'Escape') { closeFloatingPip(); closeNativePip(); document.getElementById('deleteModal').classList.remove('active'); }
         if(e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); if(!document.getElementById('stopBtn').disabled) stopRecording(); }
         if(e.code === 'Tab') { e.preventDefault(); document.body.style.opacity = document.body.style.opacity === '0' ? '1' : '0'; }
     });
@@ -567,8 +435,6 @@
         await loadRecordings();
         await updateStorageInfo();
         setInterval(updateStorageInfo, 30000);
-        // 预热 FFmpeg (静默)
-        initFFmpeg().catch(e=>console.warn);
     });
     window.addEventListener('beforeunload', () => { if(stream) stream.getTracks().forEach(t=>t.stop()); cancelAnimationFrame(animationFrameId); });
 </script>
