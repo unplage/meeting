@@ -159,6 +159,14 @@
         .ffmpeg-progress .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
         .ffmpeg-progress .bar-fill { height: 100%; background: var(--primary); border-radius: 2px; transition: width 0.2s; }
     </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "@ffmpeg/ffmpeg": "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js",
+            "@ffmpeg/util": "https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js"
+        }
+    }
+    </script>
 </head>
 <body>
 <header><div class="container"><h1>会议助手 Pro</h1></div></header>
@@ -280,11 +288,14 @@
     }
 
     // ---------- 设备枚举 ----------
-    async function loadDevices() {
+    async function loadDevices(noPermission) {
         try {
-            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            let tempStream;
+            if (!noPermission) {
+                tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            }
             const devices = await navigator.mediaDevices.enumerateDevices();
-            tempStream.getTracks().forEach(t => t.stop());
+            if (tempStream) tempStream.getTracks().forEach(t => t.stop());
             const cameras = devices.filter(d => d.kind === 'videoinput');
             const audioIns = devices.filter(d => d.kind === 'audioinput');
             const cameraSelect = document.getElementById('cameraSelect');
@@ -340,14 +351,9 @@
         if (!db) { showToast('存储初始化失败，请刷新页面重试', 'error'); return; }
         document.getElementById('startBtn').disabled = true;
         try {
-            // 权限请求延迟到此时，不在页面加载时触发
-            if (!stream) {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const hasDevices = devices.some(d => d.kind === 'videoinput' || d.kind === 'audioinput');
-                if (!hasDevices) await loadDevices();
-            }
             const constraints = { video: getVideoConstraints(), audio: getAudioConstraints() };
             stream = await navigator.mediaDevices.getUserMedia(constraints);
+            await loadDevices(); // 有权限了，重新枚举获取 label
             document.getElementById('preview').srcObject = stream;
             document.getElementById('placeholder').style.display = 'none';
             const { mimeType, format, ext } = getPreferredMimeType();
@@ -625,7 +631,7 @@
                 barEl.style.width = Math.min(Math.round(progress * 100), 99) + '%';
                 statusEl.textContent = `正在转换... ${Math.round(progress * 100)}%`;
             });
-            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.7/dist/esm';
+            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
             barEl.style.width = '30%';
             await ffmpegInstance.load({
                 coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
@@ -705,6 +711,7 @@
     // ---------- 初始化 ----------
     window.addEventListener('load', async () => {
         await initDB();
+        await loadDevices(true); // 页面加载时无权限枚举，填充设备 ID
         await loadRecordings();
         await updateStorageInfo();
         setInterval(updateStorageInfo, 30000);
