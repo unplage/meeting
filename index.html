@@ -102,6 +102,8 @@
         }
         .btn-icon:hover { background: var(--border); }
         .btn-icon.delete:hover { background: var(--danger); color: white; }
+        .btn-icon.convert:hover { background: var(--primary); color: white; }
+        .btn-icon.convert:disabled { opacity: 0.4; cursor: not-allowed; }
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.5);
             display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px);
@@ -135,14 +137,27 @@
         }
         .background-hint.show { display: flex; }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--text); color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; opacity: 0; transition: all 0.3s; z-index: 1001; }
+        .toast {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
+            background: var(--text); color: white; padding: 12px 24px; border-radius: 8px;
+            font-size: 14px; opacity: 0; transition: all 0.3s; z-index: 1001; white-space: nowrap;
+        }
         .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .toast.error { background: var(--danger); }
+        .toast.warning { background: var(--warning); color: var(--text); }
         .storage-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
         .storage-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s; }
+        .storage-fill.warning { background: var(--warning); }
+        .storage-fill.danger { background: var(--danger); }
         .shortcut-hint { background: #eff6ff; border: 1px solid #dbeafe; border-radius: 6px; padding: 12px; margin-top: 16px; font-size: 12px; }
         .shortcut-hint kbd { background: white; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-family: monospace; }
         .format-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
         .format-badge.webm { background: #dbeafe; color: #1e40af; }
+        .format-badge.mp4 { background: #dcfce7; color: #166534; }
+        .format-hint { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+        .ffmpeg-progress { margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
+        .ffmpeg-progress .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+        .ffmpeg-progress .bar-fill { height: 100%; background: var(--primary); border-radius: 2px; transition: width 0.2s; }
     </style>
 </head>
 <body>
@@ -173,6 +188,7 @@
             <div class="settings-panel">
                 <h3>⚙️ 录制设置</h3>
                 <div class="setting-item"><label>视频清晰度</label><select id="qualitySelect"><option value="1080">1080p</option><option value="720" selected>720p</option><option value="480">480p</option><option value="360">360p</option></select></div>
+                <div class="setting-item"><label>录制格式</label><select id="formatSelect"><option value="webm">WebM (通用)</option><option value="mp4" id="mp4Option">MP4 (H.264)</option></select><div class="format-hint" id="formatHint"></div></div>
                 <div class="setting-item"><label>摄像头</label><select id="cameraSelect"><option value="">默认摄像头</option></select></div>
                 <div class="setting-item"><label>麦克风</label><select id="audioSelect"><option value="">默认麦克风</option></select></div>
                 <div class="setting-item"><label>文件前缀</label><input type="text" id="namePrefix" value="会议录像"></div>
@@ -187,13 +203,51 @@
 <div class="background-hint" id="bgHint">📌 后台录制中，画面已移至悬浮窗</div>
 <div class="modal-overlay" id="deleteModal"><div class="modal"><h4>⚠️ 确认删除</h4><p>确定要删除 "<span id="deleteFileName"></span>" 吗？</p><div class="modal-actions"><button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button><button class="btn btn-danger" onclick="confirmDelete()">删除</button></div></div></div>
 <div class="toast" id="toast"></div>
+<div id="ffmpegProgress" style="display:none" class="ffmpeg-progress"><span id="ffmpegStatus">正在加载转换引擎...</span><div class="bar"><div class="bar-fill" id="ffmpegBar" style="width:0%"></div></div></div>
 <script>
     // ---------- 全局变量 ----------
     let db, mediaRecorder, recordedChunks = [], stream, startTime, timerInterval, isPaused = false, fileToDelete = null;
-    let isBackground = false, animationFrameId = null;
-    
+    let isBackground = false, animationFrameId = null, isRecording = false;
+    let pausedDuration = 0, pauseStartTime = 0;
+    let ffmpegInstance = null, ffmpegLoading = false, ffmpegLoaded = false;
+
     const DB_NAME = 'MeetingRecorderDB', DB_VERSION = 1, STORE_NAME = 'recordings';
-    
+
+    // ---------- 工具函数 ----------
+    function sanitizeFilename(str) {
+        return str.replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || '会议录像';
+    }
+
+    function formatDuration(ms) {
+        const totalSec = Math.floor(ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function formatBytes(b) {
+        if (b === 0) return '0 MB';
+        const k = 1024, i = Math.floor(Math.log(b) / Math.log(k));
+        return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + ['B', 'KB', 'MB', 'GB'][i];
+    }
+
+    function formatDate(ts) { return new Date(ts).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+
+    function escapeHtml(str) { const div = document.createElement('div'); div.textContent = str; return div.innerHTML; }
+
+    function escapeAttr(str) { return str.replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function showToast(msg, type) {
+        const toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.className = 'toast' + (type ? ' ' + type : '');
+        toast.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
     // ---------- IndexedDB ----------
     function initDB() {
         return new Promise((resolve, reject) => {
@@ -209,21 +263,28 @@
             };
         });
     }
-    
+
     async function updateStorageInfo() {
         if ('storage' in navigator && 'estimate' in navigator.storage) {
             const est = await navigator.storage.estimate();
             const used = est.usage || 0, total = est.quota || 0;
             document.getElementById('storageUsed').textContent = formatBytes(used);
             document.getElementById('storageTotal').textContent = total ? formatBytes(total) : '未知';
-            document.getElementById('storageFill').style.width = (total ? (used/total*100) : 0) + '%';
+            const pct = total ? (used / total * 100) : 0;
+            const fill = document.getElementById('storageFill');
+            fill.style.width = pct + '%';
+            fill.classList.toggle('warning', pct > 70 && pct <= 90);
+            fill.classList.toggle('danger', pct > 90);
+            if (pct > 85) showToast('存储空间不足，请及时清理', 'warning');
         }
     }
-    
+
+    // ---------- 设备枚举 ----------
     async function loadDevices() {
         try {
-            await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             const devices = await navigator.mediaDevices.enumerateDevices();
+            tempStream.getTracks().forEach(t => t.stop());
             const cameras = devices.filter(d => d.kind === 'videoinput');
             const audioIns = devices.filter(d => d.kind === 'audioinput');
             const cameraSelect = document.getElementById('cameraSelect');
@@ -234,7 +295,31 @@
             audioIns.forEach((aud, i) => { const opt = document.createElement('option'); opt.value = aud.deviceId; opt.textContent = aud.label || `麦克风 ${i+1}`; audioSelect.appendChild(opt); });
         } catch(e) { console.warn('设备枚举失败', e); }
     }
-    
+
+    // ---------- 录制格式检测 ----------
+    function detectMp4Support() {
+        const candidates = [
+            'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+            'video/mp4;codecs=avc1.42E01E',
+            'video/mp4',
+        ];
+        for (const c of candidates) { if (MediaRecorder.isTypeSupported(c)) return c; }
+        return null;
+    }
+
+    function getPreferredMimeType() {
+        if (document.getElementById('formatSelect').value === 'mp4') {
+            const mp4 = detectMp4Support();
+            if (mp4) return { mimeType: mp4, format: 'mp4', ext: 'mp4' };
+            showToast('浏览器不支持 MP4 录制，已切换为 WebM', 'warning');
+            document.getElementById('formatSelect').value = 'webm';
+        }
+        const webmCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+        for (const c of webmCandidates) { if (MediaRecorder.isTypeSupported(c)) return { mimeType: c, format: 'webm', ext: 'webm' }; }
+        return { mimeType: 'video/webm', format: 'webm', ext: 'webm' };
+    }
+
+    // ---------- 约束 ----------
     function getVideoConstraints() {
         const quality = document.getElementById('qualitySelect').value;
         const camId = document.getElementById('cameraSelect').value;
@@ -248,39 +333,52 @@
         if(audioId) cons.deviceId = { exact: audioId };
         return cons;
     }
-    
+
     // ---------- 录制核心 ----------
     async function startRecording() {
+        if (isRecording) return;
+        if (!db) { showToast('存储初始化失败，请刷新页面重试', 'error'); return; }
+        document.getElementById('startBtn').disabled = true;
         try {
+            // 权限请求延迟到此时，不在页面加载时触发
+            if (!stream) {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const hasDevices = devices.some(d => d.kind === 'videoinput' || d.kind === 'audioinput');
+                if (!hasDevices) await loadDevices();
+            }
             const constraints = { video: getVideoConstraints(), audio: getAudioConstraints() };
             stream = await navigator.mediaDevices.getUserMedia(constraints);
             document.getElementById('preview').srcObject = stream;
             document.getElementById('placeholder').style.display = 'none';
-            let mime = 'video/webm;codecs=vp9,opus';
-            if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8,opus';
-            if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
-            mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+            const { mimeType, format, ext } = getPreferredMimeType();
+            mediaRecorder = new MediaRecorder(stream, { mimeType });
             recordedChunks = [];
             mediaRecorder.ondataavailable = (e) => { if(e.data.size > 0) { recordedChunks.push(e.data); updateRecordingSize(); } };
-            mediaRecorder.onstop = saveRecording;
+            mediaRecorder.onstop = () => saveRecording(format, ext);
+            mediaRecorder.onerror = (e) => { showToast('录制出错: ' + (e.error?.message || '未知错误'), 'error'); stopRecording(); };
             mediaRecorder.start(1000);
-            document.getElementById('startBtn').disabled = true;
+            isRecording = true;
             document.getElementById('stopBtn').disabled = false;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pipBtn').disabled = false;
             document.getElementById('nativePipBtn').disabled = false;
             document.getElementById('recordingIndicator').classList.add('active');
             startTime = Date.now();
+            pausedDuration = 0;
             if(timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
             document.addEventListener('visibilitychange', handleVisibilityChange);
-            showToast('录制已开始 (WebM 高质量音视频)');
-        } catch(err) { showToast('无法启动录制: '+err.message, 'error'); }
+            showToast(`录制已开始 (${format.toUpperCase()} 高质量音视频)`);
+        } catch(err) {
+            document.getElementById('startBtn').disabled = false;
+            showToast('无法启动录制: ' + (err.name === 'NotAllowedError' ? '请允许摄像头和麦克风权限' : err.message), 'error');
+        }
     }
-    
+
     function stopRecording() {
         if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
         if(stream) stream.getTracks().forEach(t => t.stop());
+        stream = null;
         clearInterval(timerInterval);
         cancelAnimationFrame(animationFrameId);
         document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -294,154 +392,347 @@
         document.getElementById('pipBtn').disabled = true;
         document.getElementById('nativePipBtn').disabled = true;
         isPaused = false;
+        isRecording = false;
         showToast('录制停止，正在保存...');
     }
-    
+
     function togglePause() {
-        if(!mediaRecorder) return;
+        if(!mediaRecorder || mediaRecorder.state === 'inactive') return;
         if(isPaused) {
             mediaRecorder.resume();
             stream.getVideoTracks().forEach(t => t.enabled = true);
             stream.getAudioTracks().forEach(t => t.enabled = true);
+            pausedDuration += Date.now() - pauseStartTime;
             document.getElementById('pauseText').textContent = '暂停';
             showToast('继续录制');
         } else {
             mediaRecorder.pause();
             stream.getVideoTracks().forEach(t => t.enabled = false);
             stream.getAudioTracks().forEach(t => t.enabled = false);
+            pauseStartTime = Date.now();
             document.getElementById('pauseText').textContent = '继续';
             showToast('已暂停');
         }
         isPaused = !isPaused;
     }
-    
+
     function handleVisibilityChange() {
         const hidden = document.hidden;
         const floating = document.getElementById('floatingPip');
-        if(hidden && mediaRecorder && mediaRecorder.state === 'recording') {
+        if(hidden && mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
             if(!floating.classList.contains('active')) showFloatingPip();
             document.getElementById('bgHint').classList.add('show');
             isBackground = true;
             const pipVideo = document.getElementById('pipVideo');
             if(pipVideo.srcObject !== stream) pipVideo.srcObject = stream;
-            pipVideo.play().catch(e=>console.log);
+            pipVideo.play().catch(()=>{});
         } else {
             document.getElementById('bgHint').classList.remove('show');
             isBackground = false;
             if(document.getElementById('preview').srcObject !== stream && stream) document.getElementById('preview').srcObject = stream;
         }
     }
-    
-    // 悬浮窗
+
+    // ---------- 悬浮窗 ----------
     function showFloatingPip() {
         const pip = document.getElementById('floatingPip');
         const pipVideo = document.getElementById('pipVideo');
         pipVideo.srcObject = stream;
         pip.classList.add('active');
-        pipVideo.play().catch(e=>console.log);
+        pipVideo.play().catch(()=>{});
         initDrag();
     }
     function toggleFloatingPip() { const pip = document.getElementById('floatingPip'); pip.classList.contains('active') ? closeFloatingPip() : showFloatingPip(); }
-    function closeFloatingPip() { const pip = document.getElementById('floatingPip'); pip.classList.remove('active'); if(pip.querySelector('video')) pip.querySelector('video').srcObject = null; }
-    function initDrag() { const pip = document.getElementById('floatingPip'), header = document.getElementById('pipHeader'); let dragging=false, startX,startY, left,top; header.onmousedown = (e) => { if(e.target.closest('.pip-btn')) return; dragging=true; startX=e.clientX; startY=e.clientY; left=pip.offsetLeft; top=pip.offsetTop; header.style.cursor='grabbing'; }; document.onmousemove = (e) => { if(!dragging) return; pip.style.left = `${left + e.clientX - startX}px`; pip.style.top = `${top + e.clientY - startY}px`; pip.style.right='auto'; pip.style.bottom='auto'; }; document.onmouseup = () => { dragging=false; header.style.cursor='move'; }; }
-    async function toggleNativePip() { const video = document.getElementById('preview'); if(document.pictureInPictureElement) await document.exitPictureInPicture(); else await video.requestPictureInPicture(); }
-    function closeNativePip() { if(document.pictureInPictureElement) document.exitPictureInPicture(); }
-    
+    function closeFloatingPip() {
+        const pip = document.getElementById('floatingPip');
+        pip.classList.remove('active');
+        if(pip.querySelector('video')) pip.querySelector('video').srcObject = null;
+        cleanupDrag();
+    }
+
+    // ---------- 拖拽 (mouse + touch, with cleanup) ----------
+    let _dragState = null;
+    function _onDragStart(e) {
+        if (e.target.closest('.pip-btn')) return;
+        const pip = document.getElementById('floatingPip');
+        const pt = e.touches ? e.touches[0] : e;
+        _dragState = { dragging: true, startX: pt.clientX, startY: pt.clientY, left: pip.offsetLeft, top: pip.offsetTop };
+        document.getElementById('pipHeader').style.cursor = 'grabbing';
+        if (e.type === 'touchstart') e.preventDefault();
+    }
+    function _onDragMove(e) {
+        if (!_dragState || !_dragState.dragging) return;
+        const pt = e.touches ? e.touches[0] : e;
+        const pip = document.getElementById('floatingPip');
+        pip.style.left = (_dragState.left + pt.clientX - _dragState.startX) + 'px';
+        pip.style.top = (_dragState.top + pt.clientY - _dragState.startY) + 'px';
+        pip.style.right = 'auto';
+        pip.style.bottom = 'auto';
+    }
+    function _onDragEnd() {
+        if (!_dragState) return;
+        _dragState.dragging = false;
+        document.getElementById('pipHeader').style.cursor = 'move';
+    }
+    function initDrag() {
+        cleanupDrag();
+        const header = document.getElementById('pipHeader');
+        header.addEventListener('mousedown', _onDragStart);
+        header.addEventListener('touchstart', _onDragStart, { passive: false });
+        document.addEventListener('mousemove', _onDragMove);
+        document.addEventListener('touchmove', _onDragMove, { passive: true });
+        document.addEventListener('mouseup', _onDragEnd);
+        document.addEventListener('touchend', _onDragEnd);
+    }
+    function cleanupDrag() {
+        const header = document.getElementById('pipHeader');
+        header.removeEventListener('mousedown', _onDragStart);
+        header.removeEventListener('touchstart', _onDragStart);
+        document.removeEventListener('mousemove', _onDragMove);
+        document.removeEventListener('touchmove', _onDragMove);
+        document.removeEventListener('mouseup', _onDragEnd);
+        document.removeEventListener('touchend', _onDragEnd);
+    }
+
+    async function toggleNativePip() {
+        try {
+            const video = document.getElementById('preview');
+            if(document.pictureInPictureElement) await document.exitPictureInPicture();
+            else await video.requestPictureInPicture();
+        } catch(e) { console.warn('画中画操作失败', e); }
+    }
+    function closeNativePip() { try { if(document.pictureInPictureElement) document.exitPictureInPicture(); } catch(e) {} }
+
     // ---------- 保存录制到DB ----------
-    async function saveRecording() {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const prefix = document.getElementById('namePrefix').value || '会议录像';
-        const filename = `${prefix}_${new Date().toLocaleString('zh-CN').replace(/[/:]/g, '-')}.webm`;
-        const recording = { filename, blob, timestamp: Date.now(), duration: Date.now()-startTime, size: blob.size, format: 'webm' };
-        const tx = db.transaction([STORE_NAME], 'readwrite');
-        await new Promise((res,rej)=>{ const req = tx.objectStore(STORE_NAME).add(recording); req.onsuccess = ()=>res(); req.onerror = ()=>rej(req.error); });
-        document.getElementById('duration').textContent = '00:00';
-        document.getElementById('size').textContent = '0 MB';
-        recordedChunks = [];
-        loadRecordings();
-        updateStorageInfo();
-        showToast('录制已保存');
+    async function saveRecording(format, ext) {
+        try {
+            const blob = new Blob(recordedChunks, { type: format === 'mp4' ? 'video/mp4' : 'video/webm' });
+            const prefix = sanitizeFilename(document.getElementById('namePrefix').value);
+            const filename = `${prefix}_${new Date().toLocaleString('zh-CN').replace(/[/:]/g, '-')}.${ext}`;
+            const recording = { filename, blob, timestamp: Date.now(), duration: Date.now() - startTime - pausedDuration, size: blob.size, format };
+            const tx = db.transaction([STORE_NAME], 'readwrite');
+            await new Promise((res, rej) => {
+                const req = tx.objectStore(STORE_NAME).add(recording);
+                req.onsuccess = () => res();
+                req.onerror = () => rej(req.error);
+                tx.onabort = () => rej(new Error('事务已中止'));
+            });
+            document.getElementById('duration').textContent = '00:00';
+            document.getElementById('size').textContent = '0 MB';
+            recordedChunks = [];
+            loadRecordings();
+            updateStorageInfo();
+            showToast('录制已保存');
+        } catch(e) {
+            console.error('保存录制失败', e);
+            showToast('保存失败: ' + e.message, 'error');
+        }
     }
-    
+
     async function loadRecordings() {
-        const tx = db.transaction([STORE_NAME], 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const items = await new Promise((res) => { const req = store.getAll(); req.onsuccess = () => res(req.result.sort((a,b)=>b.timestamp-a.timestamp)); });
-        renderRecordings(items);
+        if (!db) return;
+        try {
+            const tx = db.transaction([STORE_NAME], 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const items = await new Promise((res, rej) => {
+                const req = store.getAll();
+                req.onsuccess = () => res(req.result.sort((a, b) => b.timestamp - a.timestamp));
+                req.onerror = () => rej(req.error);
+            });
+            renderRecordings(items);
+        } catch(e) {
+            console.error('加载录制列表失败', e);
+        }
     }
-    
+
     function renderRecordings(recordings) {
         const container = document.getElementById('recordingsList');
         document.getElementById('fileCount').textContent = `${recordings.length} 个文件`;
         if(!recordings.length) { container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><p>暂无录像文件</p></div>'; return; }
-        container.innerHTML = recordings.map(rec => `
+        const hasFfmpeg = ffmpegLoaded || !!ffmpegInstance;
+        container.innerHTML = recordings.map(rec => {
+            const fmt = (rec.format || 'webm').toLowerCase();
+            const badgeClass = fmt === 'mp4' ? 'mp4' : 'webm';
+            const badgeText = fmt === 'mp4' ? 'MP4' : 'WEBM';
+            const convertBtn = fmt === 'mp4' ? '' : `<button class="btn-icon convert" onclick="convertRecording(${rec.id})" title="转换为 MP4 下载" ${hasFfmpeg ? '' : ''}>🔄</button>`;
+            return `
             <div class="recording-item" data-id="${rec.id}">
                 <div class="recording-info">
                     <div class="recording-name">
                         ${escapeHtml(rec.filename)}
-                        <span class="format-badge webm">WEBM</span>
+                        <span class="format-badge ${badgeClass}">${badgeText}</span>
                     </div>
                     <div class="recording-meta">${formatDate(rec.timestamp)} · ${formatDuration(rec.duration)} · ${formatBytes(rec.size)}</div>
                 </div>
                 <div class="recording-actions">
                     <button class="btn-icon" onclick="downloadRecording(${rec.id})" title="下载">📥</button>
+                    ${convertBtn}
                     <button class="btn-icon" onclick="playRecording(${rec.id})" title="播放">▶️</button>
-                    <button class="btn-icon delete" onclick="showDeleteModal(${rec.id}, '${escapeHtml(rec.filename)}')" title="删除">🗑️</button>
+                    <button class="btn-icon delete" onclick="showDeleteModal(${rec.id}, ${escapeAttr(JSON.stringify(rec.filename))})" title="删除">🗑️</button>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     }
-    
+
     async function downloadRecording(id) {
         const tx = db.transaction([STORE_NAME], 'readonly');
-        const rec = await new Promise(res=>{ const req=tx.objectStore(STORE_NAME).get(id); req.onsuccess=()=>res(req.result); });
+        const rec = await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
         if(!rec) return showToast('文件不存在');
         const url = URL.createObjectURL(rec.blob);
         const a = document.createElement('a'); a.href = url; a.download = rec.filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
         showToast('下载已开始');
     }
-    
+
     async function playRecording(id) {
         const tx = db.transaction([STORE_NAME], 'readonly');
-        const rec = await new Promise(res=>{ const req=tx.objectStore(STORE_NAME).get(id); req.onsuccess=()=>res(req.result); });
-        if(rec) { const url = URL.createObjectURL(rec.blob); window.open(url, '_blank'); }
+        const rec = await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+        if(rec) { const url = URL.createObjectURL(rec.blob); window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); }
     }
-    
+
     function showDeleteModal(id, name) { fileToDelete = id; document.getElementById('deleteFileName').textContent = name; document.getElementById('deleteModal').classList.add('active'); }
     function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('active'); fileToDelete = null; }
-    async function confirmDelete() { if(!fileToDelete) return; const tx = db.transaction([STORE_NAME], 'readwrite'); await new Promise((res,rej)=>{ const req=tx.objectStore(STORE_NAME).delete(fileToDelete); req.onsuccess=res; req.onerror=rej; }); closeDeleteModal(); loadRecordings(); updateStorageInfo(); showToast('已删除'); }
-    
-    // 工具函数
-    function updateTimer() { const elapsed = Date.now()-startTime; const str = formatDuration(elapsed); document.getElementById('duration').textContent = str; document.getElementById('recordTime').textContent = str; }
-    function updateRecordingSize() { const total = recordedChunks.reduce((s,c)=>s+c.size,0); document.getElementById('size').textContent = formatBytes(total); }
-    function formatDuration(ms) { const s=Math.floor(ms/1000), m=Math.floor(s/60); return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
-    function formatBytes(b) { if(b===0) return '0 MB'; const k=1024, i=Math.floor(Math.log(b)/Math.log(k)); return parseFloat((b/Math.pow(k,i)).toFixed(1))+' '+['B','KB','MB','GB'][i]; }
-    function formatDate(ts) { return new Date(ts).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
-    function escapeHtml(str) { const div = document.createElement('div'); div.textContent = str; return div.innerHTML; }
-    function showToast(msg, type='success') { const toast = document.getElementById('toast'); toast.textContent = msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),3000); }
-    
-    // 快捷键
+    async function confirmDelete() {
+        if(!fileToDelete) return;
+        try {
+            const tx = db.transaction([STORE_NAME], 'readwrite');
+            await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).delete(fileToDelete); req.onsuccess = res; req.onerror = rej; tx.onabort = () => rej(new Error('删除失败')); });
+            closeDeleteModal();
+            loadRecordings();
+            updateStorageInfo();
+            showToast('已删除');
+        } catch(e) {
+            showToast('删除失败: ' + e.message, 'error');
+        }
+    }
+
+    // ---------- ffmpeg.wasm MP4 转换 ----------
+    async function loadFfmpeg() {
+        if (ffmpegLoaded && ffmpegInstance) return ffmpegInstance;
+        if (ffmpegLoading) return null;
+        ffmpegLoading = true;
+        const progressEl = document.getElementById('ffmpegProgress');
+        const statusEl = document.getElementById('ffmpegStatus');
+        const barEl = document.getElementById('ffmpegBar');
+        progressEl.style.display = 'block';
+        statusEl.textContent = '正在加载转换引擎 (~25MB)...';
+        barEl.style.width = '10%';
+        try {
+            const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js');
+            const { toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js');
+            ffmpegInstance = new FFmpeg();
+            ffmpegInstance.on('progress', ({ progress }) => {
+                barEl.style.width = Math.min(Math.round(progress * 100), 99) + '%';
+                statusEl.textContent = `正在转换... ${Math.round(progress * 100)}%`;
+            });
+            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.7/dist/esm';
+            barEl.style.width = '30%';
+            await ffmpegInstance.load({
+                coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+            });
+            ffmpegLoaded = true;
+            barEl.style.width = '100%';
+            statusEl.textContent = '转换引擎就绪';
+            setTimeout(() => { progressEl.style.display = 'none'; }, 1500);
+            ffmpegLoading = false;
+            return ffmpegInstance;
+        } catch(e) {
+            console.error('ffmpeg 加载失败', e);
+            statusEl.textContent = '转换引擎加载失败';
+            barEl.style.width = '0%';
+            setTimeout(() => { progressEl.style.display = 'none'; }, 3000);
+            ffmpegLoading = false;
+            ffmpegInstance = null;
+            return null;
+        }
+    }
+
+    async function convertRecording(id) {
+        const ffmpeg = await loadFfmpeg();
+        if (!ffmpeg) { showToast('无法加载 MP4 转换引擎', 'error'); return; }
+        try {
+            const tx = db.transaction([STORE_NAME], 'readonly');
+            const rec = await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+            if (!rec) { showToast('文件不存在', 'error'); return; }
+            const progressEl = document.getElementById('ffmpegProgress');
+            const statusEl = document.getElementById('ffmpegStatus');
+            const barEl = document.getElementById('ffmpegBar');
+            progressEl.style.display = 'block';
+            statusEl.textContent = '正在写入文件...';
+            barEl.style.width = '50%';
+            const inputData = new Uint8Array(await rec.blob.arrayBuffer());
+            await ffmpeg.writeFile('input.webm', inputData);
+            statusEl.textContent = '正在转换为 MP4...';
+            barEl.style.width = '60%';
+            await ffmpeg.exec(['-i', 'input.webm', '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'output.mp4']);
+            const outputData = await ffmpeg.readFile('output.mp4');
+            await ffmpeg.deleteFile('input.webm');
+            await ffmpeg.deleteFile('output.mp4');
+            const mp4Blob = new Blob([outputData], { type: 'video/mp4' });
+            const mp4Filename = rec.filename.replace(/\.\w+$/, '') + '.mp4';
+            const url = URL.createObjectURL(mp4Blob);
+            const a = document.createElement('a'); a.href = url; a.download = mp4Filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            barEl.style.width = '100%';
+            statusEl.textContent = '转换完成';
+            setTimeout(() => { progressEl.style.display = 'none'; }, 1500);
+            showToast('MP4 转换完成，已开始下载');
+        } catch(e) {
+            console.error('MP4 转换失败', e);
+            showToast('转换失败: ' + e.message, 'error');
+            document.getElementById('ffmpegProgress').style.display = 'none';
+        }
+    }
+
+    // ---------- 计时 ----------
+    function updateTimer() {
+        const elapsed = Date.now() - startTime - pausedDuration;
+        const str = formatDuration(elapsed);
+        document.getElementById('duration').textContent = str;
+        document.getElementById('recordTime').textContent = str;
+    }
+    function updateRecordingSize() { const total = recordedChunks.reduce((s, c) => s + c.size, 0); document.getElementById('size').textContent = formatBytes(total); }
+
+    // ---------- 快捷键 ----------
     document.addEventListener('keydown', (e) => {
         if(e.code === 'Space' && !e.target.matches('input,select')) { e.preventDefault(); if(!document.getElementById('pauseBtn').disabled) togglePause(); }
         if(e.code === 'Escape') { closeFloatingPip(); closeNativePip(); document.getElementById('deleteModal').classList.remove('active'); }
         if(e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); if(!document.getElementById('stopBtn').disabled) stopRecording(); }
         if(e.code === 'Tab') { e.preventDefault(); document.body.style.opacity = document.body.style.opacity === '0' ? '1' : '0'; }
     });
-    
+
+    // ---------- 初始化 ----------
     window.addEventListener('load', async () => {
         await initDB();
-        await loadDevices();
         await loadRecordings();
         await updateStorageInfo();
         setInterval(updateStorageInfo, 30000);
+        // MP4 支持检测
+        const mp4 = detectMp4Support();
+        const mp4Option = document.getElementById('mp4Option');
+        const formatHint = document.getElementById('formatHint');
+        if (!mp4) {
+            mp4Option.disabled = true;
+            mp4Option.textContent = 'MP4 (此浏览器不支持)';
+            formatHint.textContent = '当前浏览器不支持 MP4 录制，可使用 WebM 录制后转换';
+        } else {
+            formatHint.textContent = 'MP4 录制: ' + mp4;
+        }
     });
-    window.addEventListener('beforeunload', () => { if(stream) stream.getTracks().forEach(t=>t.stop()); cancelAnimationFrame(animationFrameId); });
+    window.addEventListener('beforeunload', (e) => {
+        if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+            e.preventDefault();
+            e.returnValue = '';
+            // 尝试停止并保存（beforeunload 中的异步操作不一定能完成）
+            try { mediaRecorder.stop(); } catch(ex) {}
+        }
+        if(stream) stream.getTracks().forEach(t => t.stop());
+        cancelAnimationFrame(animationFrameId);
+    });
 </script>
 <script>
   if ('serviceWorker' in navigator) {
-    // 注意：如果站点在子目录（如 /project/），注册路径需要包含子目录前缀
-    // 一般使用相对路径 './sw.js' 或绝对路径 '/project/sw.js'
     navigator.serviceWorker.register('./sw.js').then(reg => {
       console.log('Service Worker 注册成功，作用域:', reg.scope);
     }).catch(err => {
