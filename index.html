@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>会议助手 Pro - 后台录制版</title>
+    <meta name="theme-color" content="#2563eb">
     <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -113,12 +116,15 @@
         .modal h4 { margin-bottom: 12px; color: var(--danger); display: flex; align-items: center; gap: 8px; }
         .modal p { color: var(--text-secondary); margin-bottom: 20px; font-size: 14px; }
         .modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
+        .player-modal { max-width: 800px; width: 92%; }
+        .player-modal h4 { color: var(--text); }
+        .player-modal video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; margin-bottom: 20px; }
         .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
         .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.3; }
         .floating-pip {
             position: fixed; bottom: 20px; right: 20px; width: 320px; height: 180px;
             background: #000; border-radius: 8px; overflow: hidden; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.4);
-            z-index: 2147483647; display: none; border: 2px solid var(--primary);
+            z-index: 900; display: none; border: 2px solid var(--primary);
             resize: both; min-width: 100px; min-height: 60px; max-width: 800px; max-height: 600px;
         }
         .floating-pip.active { display: block; }
@@ -146,6 +152,7 @@
         .toast.error { background: var(--danger); }
         .toast.warning { background: var(--warning); color: var(--text); }
         .storage-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+        .storage-text { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
         .storage-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s; }
         .storage-fill.warning { background: var(--warning); }
         .storage-fill.danger { background: var(--danger); }
@@ -158,15 +165,9 @@
         .ffmpeg-progress { margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
         .ffmpeg-progress .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
         .ffmpeg-progress .bar-fill { height: 100%; background: var(--primary); border-radius: 2px; transition: width 0.2s; }
+        .ui-hidden .container, .ui-hidden header { opacity: 0; pointer-events: none; }
+        .ui-hidden .container, .ui-hidden header, .container, header { transition: opacity 0.2s; }
     </style>
-    <script type="importmap">
-    {
-        "imports": {
-            "@ffmpeg/ffmpeg": "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js",
-            "@ffmpeg/util": "https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js"
-        }
-    }
-    </script>
 </head>
 <body>
 <header><div class="container"><h1>会议助手 Pro</h1></div></header>
@@ -198,28 +199,39 @@
                 <div class="setting-item"><label>视频清晰度</label><select id="qualitySelect"><option value="1080">1080p</option><option value="720" selected>720p</option><option value="480">480p</option><option value="360">360p</option></select></div>
                 <div class="setting-item"><label>录制格式</label><select id="formatSelect"><option value="webm">WebM (通用)</option><option value="mp4" id="mp4Option">MP4 (H.264)</option></select><div class="format-hint" id="formatHint"></div></div>
                 <div class="setting-item"><label>摄像头</label><select id="cameraSelect"><option value="">默认摄像头</option></select></div>
-                <div class="setting-item"><label>麦克风</label><select id="audioSelect"><option value="">默认麦克风</option></select></div>
+                <div class="setting-item"><label>麦克风</label><select id="audioSelect"><option value="">默认麦克风</option></select><div class="format-hint" id="deviceHint"></div></div>
                 <div class="setting-item"><label>文件前缀</label><input type="text" id="namePrefix" value="会议录像"></div>
                 <div class="stats"><div class="stat-item"><div class="stat-value" id="duration">00:00</div><div class="stat-label">录制时长</div></div><div class="stat-item"><div class="stat-value" id="size">0 MB</div><div class="stat-label">当前大小</div></div></div>
                 <div><label style="font-size:13px;">存储空间</label><div class="storage-bar"><div class="storage-fill" id="storageFill"></div></div><div class="storage-text"><span id="storageUsed">0 MB</span><span id="storageTotal">计算中...</span></div></div>
-                <div class="shortcut-hint"><strong>快捷键</strong><br><kbd>空格</kbd> 暂停/继续 &nbsp; <kbd>Esc</kbd> 关闭小窗<br><kbd>Ctrl+S</kbd> 保存 &nbsp; <kbd>Tab</kbd> 隐藏界面</div>
+                <div class="shortcut-hint"><strong>快捷键</strong><br><kbd>空格</kbd> 暂停/继续 &nbsp; <kbd>Esc</kbd> 关闭小窗/弹窗<br><kbd>Ctrl+S</kbd> 停止并保存 &nbsp; <kbd>Ctrl+Shift+H</kbd> 隐藏界面</div>
             </div>
         </div>
     </div>
 </div>
-<div class="floating-pip" id="floatingPip"><div class="pip-header" id="pipHeader"><span class="pip-title">🔴 REC</span><div class="pip-controls"><button class="pip-btn" onclick="togglePause()">⏸</button><button class="pip-btn" onclick="stopRecording()">⏹</button><button class="pip-btn" onclick="closeFloatingPip()">×</button></div></div><video id="pipVideo" autoplay muted playsinline></video><div class="resize-handle"></div></div>
+<div class="floating-pip" id="floatingPip"><div class="pip-header" id="pipHeader"><span class="pip-title">🔴 REC</span><div class="pip-controls"><button class="pip-btn" id="pipPauseBtn" onclick="togglePause()">⏸</button><button class="pip-btn" onclick="stopRecording()">⏹</button><button class="pip-btn" onclick="closeFloatingPip()">×</button></div></div><video id="pipVideo" autoplay muted playsinline></video><div class="resize-handle"></div></div>
 <div class="background-hint" id="bgHint">📌 后台录制中，画面已移至悬浮窗</div>
 <div class="modal-overlay" id="deleteModal"><div class="modal"><h4>⚠️ 确认删除</h4><p>确定要删除 "<span id="deleteFileName"></span>" 吗？</p><div class="modal-actions"><button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button><button class="btn btn-danger" onclick="confirmDelete()">删除</button></div></div></div>
+<div class="modal-overlay" id="playerModal"><div class="modal player-modal"><h4 id="playerTitle">播放录像</h4><video id="playerVideo" controls playsinline></video><div class="modal-actions"><button class="btn btn-secondary" onclick="closePlayer()">关闭</button></div></div></div>
 <div class="toast" id="toast"></div>
 <div id="ffmpegProgress" style="display:none" class="ffmpeg-progress"><span id="ffmpegStatus">正在加载转换引擎...</span><div class="bar"><div class="bar-fill" id="ffmpegBar" style="width:0%"></div></div></div>
 <script>
     // ---------- 全局变量 ----------
-    let db, mediaRecorder, recordedChunks = [], stream, startTime, timerInterval, isPaused = false, fileToDelete = null;
-    let isBackground = false, animationFrameId = null, isRecording = false;
-    let pausedDuration = 0, pauseStartTime = 0;
-    let ffmpegInstance = null, ffmpegLoading = false, ffmpegLoaded = false;
+    let db = null, mediaRecorder = null, stream = null;
+    let timerInterval = null, heartbeatInterval = null;
+    let currentSession = null, isRecording = false, isSaving = false, isRecovering = false;
+    let fileToDelete = null;
+    let playingRecordingId = null, playerUrl = null;
+    let ffmpegInstance = null, ffmpegLoadingPromise = null, ffmpegLoaded = false;
+    let isConverting = false, storageWarningShown = false, chunkWriteWarningShown = false;
+    let recordingLockReleases = new Set(), recordingLockToken = 0;
+    const RECORDING_LOCK_NAME = 'meeting-active-recording';
 
-    const DB_NAME = 'MeetingRecorderDB', DB_VERSION = 1, STORE_NAME = 'recordings';
+    const DB_NAME = 'MeetingRecorderDB', DB_VERSION = 2;
+    const STORE_NAME = 'recordings', BLOB_STORE = 'recordingBlobs',
+          SESSION_STORE = 'recordingSessions', CHUNK_STORE = 'recordingChunks';
+    const SESSION_STALE_MS = 15000;
+    const pendingChunkWrites = new Set();
+    const unsavedChunks = new Map();
 
     // ---------- 工具函数 ----------
     function sanitizeFilename(str) {
@@ -256,24 +268,150 @@
         toast._timer = setTimeout(() => toast.classList.remove('show'), 3000);
     }
 
+    function generateId() {
+        return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function buildFilename(ext, date) {
+        const prefix = sanitizeFilename(document.getElementById('namePrefix').value);
+        return `${prefix}_${date.toLocaleString('zh-CN').replace(/[/:]/g, '-')}.${ext}`;
+    }
+
+    function requestToPromise(request) {
+        return new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error || new Error('数据库读取失败'));
+        });
+    }
+
+    function acquireRecordingLock() {
+        if (!navigator.locks || !navigator.locks.request) return Promise.resolve();
+        const token = ++recordingLockToken;
+        return new Promise(resolve => {
+            let finished = false;
+            const finish = () => { if (!finished) { finished = true; resolve(); } };
+            navigator.locks.request(RECORDING_LOCK_NAME, { mode: 'shared' }, () => {
+                finish();
+                return new Promise(release => {
+                    if (token !== recordingLockToken) release();
+                    else recordingLockReleases.add(release);
+                });
+            }).catch(err => {
+                console.warn('录制锁申请失败', err);
+                finish();
+            });
+            setTimeout(finish, 1500);
+        });
+    }
+
+    function releaseRecordingLock() {
+        recordingLockToken++;
+        recordingLockReleases.forEach(release => release());
+        recordingLockReleases.clear();
+    }
+
+    async function hasActiveRecordingLock() {
+        if (!navigator.locks || !navigator.locks.query) return false;
+        try {
+            const { held } = await navigator.locks.query();
+            return held.some(lock => lock.name === RECORDING_LOCK_NAME);
+        } catch(e) {
+            return false;
+        }
+    }
+
+    function txComplete(tx) {
+        return new Promise((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error('数据库事务失败'));
+            tx.onabort = () => reject(tx.error || new Error('数据库事务已中止'));
+        });
+    }
+
     // ---------- IndexedDB ----------
     function initDB() {
         return new Promise((resolve, reject) => {
+            let settled = false;
+            const fail = (err) => { if (!settled) { settled = true; reject(err); } };
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => { db = request.result; resolve(db); };
+            request.onerror = () => fail(request.error || new Error('无法打开本地数据库'));
+            request.onblocked = () => fail(new Error('数据库被其它页面占用，请关闭其它标签页后重试'));
+            request.onsuccess = () => {
+                db = request.result;
+                db.onversionchange = () => {
+                    db.close();
+                    db = null;
+                    showToast('数据库已更新，请刷新页面', 'warning');
+                };
+                settled = true;
+                resolve(db);
+            };
             request.onupgradeneeded = (e) => {
                 const dbInst = e.target.result;
+                const tx = e.target.transaction;
+                let store;
                 if (!dbInst.objectStoreNames.contains(STORE_NAME)) {
-                    const store = dbInst.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                    store = dbInst.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
                     store.createIndex('timestamp', 'timestamp');
+                } else {
+                    store = tx.objectStore(STORE_NAME);
+                }
+                if (!dbInst.objectStoreNames.contains(BLOB_STORE)) {
+                    dbInst.createObjectStore(BLOB_STORE, { keyPath: 'id' });
+                }
+                if (!dbInst.objectStoreNames.contains(SESSION_STORE)) {
+                    dbInst.createObjectStore(SESSION_STORE, { keyPath: 'id' });
+                }
+                if (!dbInst.objectStoreNames.contains(CHUNK_STORE)) {
+                    const chunkStore = dbInst.createObjectStore(CHUNK_STORE, { keyPath: 'id', autoIncrement: true });
+                    chunkStore.createIndex('sessionId', 'sessionId');
+                }
+                // v1 → v2：把 Blob 从元数据中拆出，列表加载时不再读取全部录像
+                if (e.oldVersion < 2) {
+                    const blobStore = tx.objectStore(BLOB_STORE);
+                    store.openCursor().onsuccess = (ev) => {
+                        const cursor = ev.target.result;
+                        if (!cursor) return;
+                        const rec = cursor.value;
+                        if (rec && rec.blob) {
+                            blobStore.put({ id: rec.id, blob: rec.blob });
+                            delete rec.blob;
+                            cursor.update(rec);
+                        }
+                        cursor.continue();
+                    };
                 }
             };
         });
     }
 
+    async function writeSessionRecord(session) {
+        if (!db) return;
+        const record = { ...session, updatedAt: Date.now() };
+        session.updatedAt = record.updatedAt;
+        const tx = db.transaction([SESSION_STORE], 'readwrite');
+        tx.objectStore(SESSION_STORE).put(record);
+        await txComplete(tx);
+    }
+
+    async function deleteSessionRecord(sessionId) {
+        if (!db) return;
+        const tx = db.transaction([SESSION_STORE, CHUNK_STORE], 'readwrite');
+        tx.objectStore(SESSION_STORE).delete(sessionId);
+        const index = tx.objectStore(CHUNK_STORE).index('sessionId');
+        const request = index.openCursor(IDBKeyRange.only(sessionId));
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+        };
+        await txComplete(tx);
+    }
+
     async function updateStorageInfo() {
-        if ('storage' in navigator && 'estimate' in navigator.storage) {
+        if (!('storage' in navigator) || !navigator.storage.estimate) return;
+        try {
             const est = await navigator.storage.estimate();
             const used = est.usage || 0, total = est.quota || 0;
             document.getElementById('storageUsed').textContent = formatBytes(used);
@@ -283,36 +421,78 @@
             fill.style.width = pct + '%';
             fill.classList.toggle('warning', pct > 70 && pct <= 90);
             fill.classList.toggle('danger', pct > 90);
-            if (pct > 85) showToast('存储空间不足，请及时清理', 'warning');
+            if (pct > 85 && !storageWarningShown) {
+                storageWarningShown = true;
+                showToast('存储空间不足，请及时清理', 'warning');
+            } else if (pct < 75) {
+                storageWarningShown = false;
+            }
+        } catch(e) {
+            console.warn('无法获取存储信息', e);
+        }
+    }
+
+    async function requestPersistentStorage() {
+        try {
+            if (!navigator.storage || !navigator.storage.persist) return;
+            const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+            if (!already) await navigator.storage.persist();
+        } catch(e) {
+            console.warn('申请持久化存储失败', e);
         }
     }
 
     // ---------- 设备枚举 ----------
-    async function loadDevices(noPermission) {
+    async function loadDevices() {
         try {
-            let tempStream;
-            if (!noPermission) {
-                tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            }
             const devices = await navigator.mediaDevices.enumerateDevices();
-            if (tempStream) tempStream.getTracks().forEach(t => t.stop());
-            const cameras = devices.filter(d => d.kind === 'videoinput');
-            const audioIns = devices.filter(d => d.kind === 'audioinput');
+            const cameras = devices.filter(d => d.kind === 'videoinput' && d.deviceId);
+            const audioIns = devices.filter(d => d.kind === 'audioinput' && d.deviceId);
+
             const cameraSelect = document.getElementById('cameraSelect');
+            const prevCamera = cameraSelect.value;
             cameraSelect.innerHTML = '<option value="">默认摄像头</option>';
-            cameras.forEach((cam, i) => { const opt = document.createElement('option'); opt.value = cam.deviceId; opt.textContent = cam.label || `摄像头 ${i+1}`; cameraSelect.appendChild(opt); });
+            cameras.forEach((cam, i) => {
+                const opt = document.createElement('option');
+                opt.value = cam.deviceId;
+                opt.textContent = cam.label || `摄像头 ${i + 1}`;
+                cameraSelect.appendChild(opt);
+            });
+            if (prevCamera && [...cameraSelect.options].some(o => o.value === prevCamera)) {
+                cameraSelect.value = prevCamera;
+            }
+
             const audioSelect = document.getElementById('audioSelect');
+            const prevAudio = audioSelect.value;
             audioSelect.innerHTML = '<option value="">默认麦克风</option>';
-            audioIns.forEach((aud, i) => { const opt = document.createElement('option'); opt.value = aud.deviceId; opt.textContent = aud.label || `麦克风 ${i+1}`; audioSelect.appendChild(opt); });
-        } catch(e) { console.warn('设备枚举失败', e); }
+            audioIns.forEach((aud, i) => {
+                const opt = document.createElement('option');
+                opt.value = aud.deviceId;
+                opt.textContent = aud.label || `麦克风 ${i + 1}`;
+                audioSelect.appendChild(opt);
+            });
+            if (prevAudio && [...audioSelect.options].some(o => o.value === prevAudio)) {
+                audioSelect.value = prevAudio;
+            }
+
+            const hint = document.getElementById('deviceHint');
+            if (hint) {
+                hint.textContent = (cameras.length || audioIns.length)
+                    ? ''
+                    : '首次开始录像并授权后可选择具体设备';
+            }
+        } catch(e) {
+            console.warn('设备枚举失败', e);
+        }
     }
 
     // ---------- 录制格式检测 ----------
     function detectMp4Support() {
+        if (typeof MediaRecorder === 'undefined') return null;
         const candidates = [
             'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-            'video/mp4;codecs=avc1.42E01E',
-            'video/mp4',
+            'video/mp4;codecs=avc1.4D401E,mp4a.40.2',
+            'video/mp4;codecs=avc1.640028,mp4a.40.2',
         ];
         for (const c of candidates) { if (MediaRecorder.isTypeSupported(c)) return c; }
         return null;
@@ -322,19 +502,28 @@
         if (document.getElementById('formatSelect').value === 'mp4') {
             const mp4 = detectMp4Support();
             if (mp4) return { mimeType: mp4, format: 'mp4', ext: 'mp4' };
-            showToast('浏览器不支持 MP4 录制，已切换为 WebM', 'warning');
+            showToast('浏览器不支持带音频的 MP4 录制，已切换为 WebM', 'warning');
             document.getElementById('formatSelect').value = 'webm';
         }
         const webmCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-        for (const c of webmCandidates) { if (MediaRecorder.isTypeSupported(c)) return { mimeType: c, format: 'webm', ext: 'webm' }; }
-        return { mimeType: 'video/webm', format: 'webm', ext: 'webm' };
+        for (const c of webmCandidates) {
+            if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) {
+                return { mimeType: c, format: 'webm', ext: 'webm' };
+            }
+        }
+        return { mimeType: '', format: 'webm', ext: 'webm' };
     }
 
     // ---------- 约束 ----------
     function getVideoConstraints() {
-        const quality = document.getElementById('qualitySelect').value;
+        const quality = parseInt(document.getElementById('qualitySelect').value, 10) || 720;
         const camId = document.getElementById('cameraSelect').value;
-        const cons = { width: { ideal: parseInt(quality) }, height: { ideal: parseInt(quality)*9/16 }, frameRate: { ideal: 30 } };
+        const cons = {
+            width: { ideal: Math.round(quality * 16 / 9) },
+            height: { ideal: quality },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 30 }
+        };
         if(camId) cons.deviceId = { exact: camId };
         return cons;
     }
@@ -346,101 +535,205 @@
     }
 
     // ---------- 录制核心 ----------
+    function getElapsedMs(session = currentSession) {
+        if (!session) return 0;
+        const now = Date.now();
+        const currentPause = session.isPaused ? now - session.pauseStartTime : 0;
+        return Math.max(0, now - session.startTime - session.pausedDuration - currentPause);
+    }
+
+    function updatePauseUI(paused) {
+        document.getElementById('pauseText').textContent = paused ? '继续' : '暂停';
+        const pipPauseBtn = document.getElementById('pipPauseBtn');
+        if (pipPauseBtn) pipPauseBtn.textContent = paused ? '▶' : '⏸';
+    }
+
     async function startRecording() {
-        if (isRecording) return;
+        if (isRecording || isSaving || currentSession) return;
         if (!db) { showToast('存储初始化失败，请刷新页面重试', 'error'); return; }
-        document.getElementById('startBtn').disabled = true;
+        if (typeof MediaRecorder === 'undefined') { showToast('当前浏览器不支持录制', 'error'); return; }
+
+        const startBtn = document.getElementById('startBtn');
+        startBtn.disabled = true;
+        let session = null;
         try {
-            const constraints = { video: getVideoConstraints(), audio: getAudioConstraints() };
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            await loadDevices(); // 有权限了，重新枚举获取 label
-            document.getElementById('preview').srcObject = stream;
-            document.getElementById('placeholder').style.display = 'none';
-            const { mimeType, format, ext } = getPreferredMimeType();
-            mediaRecorder = new MediaRecorder(stream, { mimeType });
-            recordedChunks = [];
-            mediaRecorder.ondataavailable = (e) => { if(e.data.size > 0) { recordedChunks.push(e.data); updateRecordingSize(); } };
-            mediaRecorder.onstop = () => saveRecording(format, ext);
-            mediaRecorder.onerror = (e) => { showToast('录制出错: ' + (e.error?.message || '未知错误'), 'error'); stopRecording(); };
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: getVideoConstraints(),
+                audio: getAudioConstraints()
+            });
+            await loadDevices();
+            const preferred = getPreferredMimeType();
+            mediaRecorder = preferred.mimeType
+                ? new MediaRecorder(stream, { mimeType: preferred.mimeType })
+                : new MediaRecorder(stream);
+            const actualMime = mediaRecorder.mimeType || preferred.mimeType || 'video/webm';
+            const format = actualMime.includes('mp4') ? 'mp4' : 'webm';
+
+            session = {
+                id: generateId(),
+                filename: buildFilename(format, new Date()),
+                timestamp: Date.now(),
+                format,
+                ext: format,
+                startTime: Date.now(),
+                pausedDuration: 0,
+                pauseStartTime: 0,
+                isPaused: false,
+                duration: null,
+                seq: 0,
+                size: 0,
+                updatedAt: Date.now(),
+                finalized: false
+            };
+            await acquireRecordingLock();
+            await writeSessionRecord(session);
+            currentSession = session;
+
+            mediaRecorder.ondataavailable = (e) => handleChunk(session, e.data);
+            mediaRecorder.onstop = () => finalizeSession(session);
+            mediaRecorder.onerror = (e) => {
+                showToast('录制出错: ' + (e.error?.message || '未知错误'), 'error');
+                stopRecording();
+            };
             mediaRecorder.start(1000);
             isRecording = true;
+
+            document.getElementById('preview').srcObject = stream;
+            document.getElementById('placeholder').style.display = 'none';
             document.getElementById('stopBtn').disabled = false;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pipBtn').disabled = false;
             document.getElementById('nativePipBtn').disabled = false;
             document.getElementById('recordingIndicator').classList.add('active');
-            startTime = Date.now();
-            pausedDuration = 0;
-            if(timerInterval) clearInterval(timerInterval);
+            document.getElementById('recordTime').textContent = '00:00';
+            document.getElementById('duration').textContent = '00:00';
+            document.getElementById('size').textContent = '0 MB';
+            updatePauseUI(false);
+
+            if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = setInterval(() => {
+                if (currentSession && !currentSession.stopping && !currentSession.finalized) {
+                    writeSessionRecord(currentSession).catch(err => console.warn('心跳写入失败', err));
+                }
+            }, 4000);
             document.addEventListener('visibilitychange', handleVisibilityChange);
-            showToast(`录制已开始 (${format.toUpperCase()} 高质量音视频)`);
+            requestPersistentStorage();
+            showToast(`录制已开始 (${format.toUpperCase()})`);
         } catch(err) {
-            document.getElementById('startBtn').disabled = false;
-            showToast('无法启动录制: ' + (err.name === 'NotAllowedError' ? '请允许摄像头和麦克风权限' : err.message), 'error');
+            console.error('启动录制失败', err);
+            if (isRecording || currentSession) {
+                stopRecording();
+            } else {
+                releaseRecordingLock();
+                if (session) {
+                    try { await deleteSessionRecord(session.id); } catch(e) { console.warn('清理会话失败', e); }
+                }
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    try { mediaRecorder.stop(); } catch(e) { console.warn(e); }
+                }
+                if (stream) stream.getTracks().forEach(t => t.stop());
+                stream = null;
+                currentSession = null;
+                mediaRecorder = null;
+                document.getElementById('preview').srcObject = null;
+                document.getElementById('placeholder').style.display = 'flex';
+                startBtn.disabled = false;
+            }
+            const message = err.name === 'NotAllowedError'
+                ? '请允许摄像头和麦克风权限'
+                : (err.name === 'NotFoundError' ? '未找到可用的摄像头或麦克风' : err.message);
+            showToast('无法启动录制: ' + message, 'error');
         }
     }
 
     function stopRecording() {
-        if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-        if(stream) stream.getTracks().forEach(t => t.stop());
+        const session = currentSession;
+        if (!session || session.stopping) return;
+        session.stopping = true;
+        session.duration = getElapsedMs(session);
+        if (session.isPaused) {
+            session.pausedDuration += Date.now() - session.pauseStartTime;
+            session.isPaused = false;
+            session.pauseStartTime = 0;
+        }
+        session.updatedAt = Date.now();
+
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            try { mediaRecorder.stop(); }
+            catch(e) {
+                console.warn('停止录制失败', e);
+                finalizeSession(session);
+            }
+        } else {
+            finalizeSession(session);
+        }
+
+        if (stream) stream.getTracks().forEach(t => t.stop());
         stream = null;
-        clearInterval(timerInterval);
-        cancelAnimationFrame(animationFrameId);
+        clearInterval(timerInterval); timerInterval = null;
+        clearInterval(heartbeatInterval); heartbeatInterval = null;
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         document.getElementById('preview').srcObject = null;
         document.getElementById('placeholder').style.display = 'flex';
         document.getElementById('recordingIndicator').classList.remove('active');
-        closeFloatingPip(); closeNativePip();
-        document.getElementById('startBtn').disabled = false;
+        document.getElementById('bgHint').classList.remove('show');
+        closeFloatingPip();
+        closeNativePip();
         document.getElementById('stopBtn').disabled = true;
         document.getElementById('pauseBtn').disabled = true;
         document.getElementById('pipBtn').disabled = true;
         document.getElementById('nativePipBtn').disabled = true;
-        isPaused = false;
+        document.getElementById('recordTime').textContent = '00:00';
+        updatePauseUI(false);
         isRecording = false;
         showToast('录制停止，正在保存...');
     }
 
     function togglePause() {
-        if(!mediaRecorder || mediaRecorder.state === 'inactive') return;
-        if(isPaused) {
+        const session = currentSession;
+        if (!session || !mediaRecorder || mediaRecorder.state === 'inactive') return;
+        if (session.isPaused) {
             mediaRecorder.resume();
-            stream.getVideoTracks().forEach(t => t.enabled = true);
-            stream.getAudioTracks().forEach(t => t.enabled = true);
-            pausedDuration += Date.now() - pauseStartTime;
-            document.getElementById('pauseText').textContent = '暂停';
+            if (stream) stream.getTracks().forEach(t => t.enabled = true);
+            session.pausedDuration += Date.now() - session.pauseStartTime;
+            session.isPaused = false;
+            session.pauseStartTime = 0;
+            updatePauseUI(false);
             showToast('继续录制');
         } else {
             mediaRecorder.pause();
-            stream.getVideoTracks().forEach(t => t.enabled = false);
-            stream.getAudioTracks().forEach(t => t.enabled = false);
-            pauseStartTime = Date.now();
-            document.getElementById('pauseText').textContent = '继续';
+            if (stream) stream.getTracks().forEach(t => t.enabled = false);
+            session.isPaused = true;
+            session.pauseStartTime = Date.now();
+            updatePauseUI(true);
             showToast('已暂停');
         }
-        isPaused = !isPaused;
+        session.updatedAt = Date.now();
+        writeSessionRecord(session).catch(err => console.warn('保存暂停状态失败', err));
+        updateTimer();
     }
 
     function handleVisibilityChange() {
-        const hidden = document.hidden;
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
         const floating = document.getElementById('floatingPip');
-        if(hidden && mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
-            if(!floating.classList.contains('active')) showFloatingPip();
+        if (document.hidden) {
+            if (!floating.classList.contains('active')) showFloatingPip();
             document.getElementById('bgHint').classList.add('show');
-            isBackground = true;
             const pipVideo = document.getElementById('pipVideo');
-            if(pipVideo.srcObject !== stream) pipVideo.srcObject = stream;
-            pipVideo.play().catch(()=>{});
+            if (stream && pipVideo.srcObject !== stream) pipVideo.srcObject = stream;
+            pipVideo.play().catch(() => {});
         } else {
             document.getElementById('bgHint').classList.remove('show');
-            isBackground = false;
-            if(document.getElementById('preview').srcObject !== stream && stream) document.getElementById('preview').srcObject = stream;
+            const preview = document.getElementById('preview');
+            if (stream && preview.srcObject !== stream) preview.srcObject = stream;
         }
     }
 
     // ---------- 悬浮窗 ----------
     function showFloatingPip() {
+        if (!stream) return;
         const pip = document.getElementById('floatingPip');
         const pipVideo = document.getElementById('pipVideo');
         pipVideo.srcObject = stream;
@@ -470,6 +763,7 @@
         if (!_dragState || !_dragState.dragging) return;
         const pt = e.touches ? e.touches[0] : e;
         const pip = document.getElementById('floatingPip');
+        if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
         pip.style.left = (_dragState.left + pt.clientX - _dragState.startX) + 'px';
         pip.style.top = (_dragState.top + pt.clientY - _dragState.startY) + 'px';
         pip.style.right = 'auto';
@@ -486,7 +780,7 @@
         header.addEventListener('mousedown', _onDragStart);
         header.addEventListener('touchstart', _onDragStart, { passive: false });
         document.addEventListener('mousemove', _onDragMove);
-        document.addEventListener('touchmove', _onDragMove, { passive: true });
+        document.addEventListener('touchmove', _onDragMove, { passive: false });
         document.addEventListener('mouseup', _onDragEnd);
         document.addEventListener('touchend', _onDragEnd);
     }
@@ -503,35 +797,206 @@
     async function toggleNativePip() {
         try {
             const video = document.getElementById('preview');
-            if(document.pictureInPictureElement) await document.exitPictureInPicture();
-            else await video.requestPictureInPicture();
-        } catch(e) { console.warn('画中画操作失败', e); }
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+                return;
+            }
+            if (!video.requestPictureInPicture) {
+                showToast('当前浏览器不支持系统画中画', 'warning');
+                return;
+            }
+            await video.requestPictureInPicture();
+        } catch(e) {
+            console.warn('画中画操作失败', e);
+            showToast('画中画操作失败', 'warning');
+        }
     }
-    function closeNativePip() { try { if(document.pictureInPictureElement) document.exitPictureInPicture(); } catch(e) {} }
+    function closeNativePip() {
+        if (document.pictureInPictureElement && document.exitPictureInPicture) {
+            document.exitPictureInPicture().catch(() => {});
+        }
+    }
 
-    // ---------- 保存录制到DB ----------
-    async function saveRecording(format, ext) {
+    // ---------- 分片持久化与保存 ----------
+    function handleChunk(session, data) {
+        if (!data || !data.size) return;
+        const seq = session.seq++;
+        session.size += data.size;
+        session.updatedAt = Date.now();
+        if (currentSession === session) updateRecordingSize();
+
+        const chunk = { sessionId: session.id, seq, blob: data, ts: Date.now() };
+        const key = session.id + ':' + seq;
+        unsavedChunks.set(key, chunk);
+
+        const write = (async () => {
+            const tx = db.transaction([CHUNK_STORE], 'readwrite');
+            tx.objectStore(CHUNK_STORE).add(chunk);
+            await txComplete(tx);
+            unsavedChunks.delete(key);
+        })().catch(err => {
+            console.error('录像分片写入失败', err);
+            if (!chunkWriteWarningShown) {
+                chunkWriteWarningShown = true;
+                showToast('录像分片写入失败，当前分片暂存在内存中', 'warning');
+            }
+        });
+        pendingChunkWrites.add(write);
+        write.then(() => pendingChunkWrites.delete(write), () => pendingChunkWrites.delete(write));
+    }
+
+    async function flushChunkWrites() {
+        await Promise.allSettled([...pendingChunkWrites]);
+    }
+
+    async function readSessionChunks(sessionId) {
+        const tx = db.transaction([CHUNK_STORE], 'readonly');
+        const index = tx.objectStore(CHUNK_STORE).index('sessionId');
+        return await requestToPromise(index.getAll(sessionId));
+    }
+
+    async function collectSessionChunks(session) {
+        const bySeq = new Map();
+        const persisted = await readSessionChunks(session.id);
+        persisted.forEach(chunk => bySeq.set(chunk.seq, chunk));
+        unsavedChunks.forEach(chunk => {
+            if (chunk.sessionId === session.id) bySeq.set(chunk.seq, chunk);
+        });
+        return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+    }
+
+    function clearUnsavedChunks(sessionId) {
+        const prefix = sessionId + ':';
+        [...unsavedChunks.keys()].forEach(key => {
+            if (key.startsWith(prefix)) unsavedChunks.delete(key);
+        });
+    }
+
+    async function commitRecording(session, recording, blob) {
+        const tx = db.transaction([STORE_NAME, BLOB_STORE, SESSION_STORE, CHUNK_STORE], 'readwrite');
+        const metaStore = tx.objectStore(STORE_NAME);
+        const blobStore = tx.objectStore(BLOB_STORE);
+        const addRequest = metaStore.add(recording);
+        addRequest.onsuccess = () => {
+            blobStore.put({ id: addRequest.result, blob });
+        };
+        tx.objectStore(SESSION_STORE).delete(session.id);
+        const chunkIndex = tx.objectStore(CHUNK_STORE).index('sessionId');
+        const cursorRequest = chunkIndex.openCursor(IDBKeyRange.only(session.id));
+        cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+        };
+        await txComplete(tx);
+        clearUnsavedChunks(session.id);
+    }
+
+    async function finalizeSession(session) {
+        if (!session || session.finalized) return;
+        session.finalized = true;
+        isSaving = true;
+        document.getElementById('startBtn').disabled = true;
         try {
-            const blob = new Blob(recordedChunks, { type: format === 'mp4' ? 'video/mp4' : 'video/webm' });
-            const prefix = sanitizeFilename(document.getElementById('namePrefix').value);
-            const filename = `${prefix}_${new Date().toLocaleString('zh-CN').replace(/[/:]/g, '-')}.${ext}`;
-            const recording = { filename, blob, timestamp: Date.now(), duration: Date.now() - startTime - pausedDuration, size: blob.size, format };
-            const tx = db.transaction([STORE_NAME], 'readwrite');
-            await new Promise((res, rej) => {
-                const req = tx.objectStore(STORE_NAME).add(recording);
-                req.onsuccess = () => res();
-                req.onerror = () => rej(req.error);
-                tx.onabort = () => rej(new Error('事务已中止'));
+            await flushChunkWrites();
+            const chunks = await collectSessionChunks(session);
+            const blob = new Blob(chunks.map(chunk => chunk.blob), {
+                type: session.format === 'mp4' ? 'video/mp4' : 'video/webm'
             });
+            if (!blob.size) {
+                await deleteSessionRecord(session.id);
+                document.getElementById('duration').textContent = '00:00';
+                document.getElementById('size').textContent = '0 MB';
+                showToast('未录制到内容，已取消保存', 'warning');
+                return;
+            }
+            const lastTs = chunks.length ? chunks[chunks.length - 1].ts : Date.now();
+            const duration = session.duration != null
+                ? session.duration
+                : Math.max(0, lastTs - session.startTime - (session.pausedDuration || 0));
+            const recording = {
+                filename: session.filename,
+                timestamp: session.timestamp,
+                duration,
+                size: blob.size,
+                format: session.format
+            };
+            await commitRecording(session, recording, blob);
             document.getElementById('duration').textContent = '00:00';
             document.getElementById('size').textContent = '0 MB';
-            recordedChunks = [];
+            showToast('录制已保存');
             loadRecordings();
             updateStorageInfo();
-            showToast('录制已保存');
         } catch(e) {
             console.error('保存录制失败', e);
-            showToast('保存失败: ' + e.message, 'error');
+            session.finalized = false;
+            session.updatedAt = 0;
+            try {
+                const tx = db.transaction([SESSION_STORE], 'readwrite');
+                tx.objectStore(SESSION_STORE).put({ ...session, finalized: false, updatedAt: 0 });
+                await txComplete(tx);
+            } catch(err) {
+                console.warn('保留待恢复会话失败', err);
+            }
+            showToast('保存失败，录像数据已保留，稍后自动恢复', 'error');
+            setTimeout(recoverStaleSessions, 2000);
+        } finally {
+            releaseRecordingLock();
+            isSaving = false;
+            if (currentSession === session) currentSession = null;
+            document.getElementById('startBtn').disabled = false;
+        }
+    }
+
+    async function recoverStaleSessions() {
+        if (!db || isSaving || isRecovering) return;
+        isRecovering = true;
+        try {
+            if (await hasActiveRecordingLock()) return;
+            const tx = db.transaction([SESSION_STORE], 'readonly');
+            const sessions = await requestToPromise(tx.objectStore(SESSION_STORE).getAll());
+            const stale = sessions.filter(session =>
+                (!session.updatedAt || Date.now() - session.updatedAt > SESSION_STALE_MS) &&
+                (!currentSession || currentSession.id !== session.id)
+            );
+            if (!stale.length) return;
+            let recovered = 0;
+            for (const session of stale) {
+                try {
+                    const chunks = await collectSessionChunks(session);
+                    if (!chunks.length) {
+                        await deleteSessionRecord(session.id);
+                        continue;
+                    }
+                    const blob = new Blob(chunks.map(chunk => chunk.blob), {
+                        type: session.format === 'mp4' ? 'video/mp4' : 'video/webm'
+                    });
+                    const lastTs = chunks[chunks.length - 1].ts;
+                    const recording = {
+                        filename: session.filename || buildFilename(session.format === 'mp4' ? 'mp4' : 'webm', new Date(session.startTime || Date.now())),
+                        timestamp: session.timestamp || session.startTime || Date.now(),
+                        duration: session.duration != null
+                            ? session.duration
+                            : Math.max(0, lastTs - (session.startTime || lastTs) - (session.pausedDuration || 0)),
+                        size: blob.size,
+                        format: session.format === 'mp4' ? 'mp4' : 'webm'
+                    };
+                    await commitRecording(session, recording, blob);
+                    recovered++;
+                } catch(e) {
+                    console.error('恢复录像失败', e);
+                }
+            }
+            if (recovered) {
+                showToast(`已恢复 ${recovered} 段未保存的录像`);
+                loadRecordings();
+                updateStorageInfo();
+            }
+        } catch(e) {
+            console.warn('检查未完成录像失败', e);
+        } finally {
+            isRecovering = false;
         }
     }
 
@@ -539,12 +1004,8 @@
         if (!db) return;
         try {
             const tx = db.transaction([STORE_NAME], 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-            const items = await new Promise((res, rej) => {
-                const req = store.getAll();
-                req.onsuccess = () => res(req.result.sort((a, b) => b.timestamp - a.timestamp));
-                req.onerror = () => rej(req.error);
-            });
+            const items = await requestToPromise(tx.objectStore(STORE_NAME).getAll());
+            items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             renderRecordings(items);
         } catch(e) {
             console.error('加载录制列表失败', e);
@@ -555,56 +1016,107 @@
         const container = document.getElementById('recordingsList');
         document.getElementById('fileCount').textContent = `${recordings.length} 个文件`;
         if(!recordings.length) { container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><p>暂无录像文件</p></div>'; return; }
-        const hasFfmpeg = ffmpegLoaded || !!ffmpegInstance;
         container.innerHTML = recordings.map(rec => {
             const fmt = (rec.format || 'webm').toLowerCase();
             const badgeClass = fmt === 'mp4' ? 'mp4' : 'webm';
             const badgeText = fmt === 'mp4' ? 'MP4' : 'WEBM';
-            const convertBtn = fmt === 'mp4' ? '' : `<button class="btn-icon convert" onclick="convertRecording(${rec.id})" title="转换为 MP4 下载" ${hasFfmpeg ? '' : ''}>🔄</button>`;
+            const convertBtn = fmt === 'mp4' ? '' : `<button class="btn-icon convert" onclick="convertRecording(${rec.id})" title="转换为 MP4 下载" ${isConverting ? 'disabled' : ''}>🔄</button>`;
             return `
             <div class="recording-item" data-id="${rec.id}">
                 <div class="recording-info">
                     <div class="recording-name">
-                        ${escapeHtml(rec.filename)}
+                        ${escapeHtml(rec.filename || '未命名录像')}
                         <span class="format-badge ${badgeClass}">${badgeText}</span>
                     </div>
-                    <div class="recording-meta">${formatDate(rec.timestamp)} · ${formatDuration(rec.duration)} · ${formatBytes(rec.size)}</div>
+                    <div class="recording-meta">${formatDate(rec.timestamp || Date.now())} · ${formatDuration(rec.duration || 0)} · ${formatBytes(rec.size || 0)}</div>
                 </div>
                 <div class="recording-actions">
                     <button class="btn-icon" onclick="downloadRecording(${rec.id})" title="下载">📥</button>
                     ${convertBtn}
                     <button class="btn-icon" onclick="playRecording(${rec.id})" title="播放">▶️</button>
-                    <button class="btn-icon delete" onclick="showDeleteModal(${rec.id}, ${escapeAttr(JSON.stringify(rec.filename))})" title="删除">🗑️</button>
+                    <button class="btn-icon delete" onclick="showDeleteModal(${rec.id}, ${escapeAttr(JSON.stringify(rec.filename || ''))})" title="删除">🗑️</button>
                 </div>
             </div>`;
         }).join('');
     }
 
+    async function readRecording(id) {
+        if (!db) return null;
+        const tx = db.transaction([STORE_NAME, BLOB_STORE], 'readonly');
+        const metaRequest = tx.objectStore(STORE_NAME).get(id);
+        const blobRequest = tx.objectStore(BLOB_STORE).get(id);
+        const [meta, blobRecord] = await Promise.all([
+            requestToPromise(metaRequest),
+            requestToPromise(blobRequest)
+        ]);
+        if (!meta) return null;
+        const blob = (blobRecord && blobRecord.blob) || meta.blob;
+        return blob ? { ...meta, blob } : meta;
+    }
+
     async function downloadRecording(id) {
-        const tx = db.transaction([STORE_NAME], 'readonly');
-        const rec = await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
-        if(!rec) return showToast('文件不存在');
-        const url = URL.createObjectURL(rec.blob);
-        const a = document.createElement('a'); a.href = url; a.download = rec.filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        showToast('下载已开始');
+        try {
+            const rec = await readRecording(id);
+            if (!rec || !rec.blob) { showToast('文件不存在', 'error'); return; }
+            const url = URL.createObjectURL(rec.blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = rec.filename || `recording.${rec.format || 'webm'}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            showToast('下载已开始');
+        } catch(e) {
+            showToast('下载失败: ' + e.message, 'error');
+        }
     }
 
     async function playRecording(id) {
-        const tx = db.transaction([STORE_NAME], 'readonly');
-        const rec = await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
-        if(rec) { const url = URL.createObjectURL(rec.blob); window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); }
+        try {
+            const rec = await readRecording(id);
+            if (!rec || !rec.blob) { showToast('文件不存在', 'error'); return; }
+            closePlayer();
+            playingRecordingId = id;
+            playerUrl = URL.createObjectURL(rec.blob);
+            const video = document.getElementById('playerVideo');
+            document.getElementById('playerTitle').textContent = rec.filename || '播放录像';
+            video.src = playerUrl;
+            document.getElementById('playerModal').classList.add('active');
+            video.play().catch(() => {});
+        } catch(e) {
+            showToast('播放失败: ' + e.message, 'error');
+        }
+    }
+
+    function closePlayer() {
+        const video = document.getElementById('playerVideo');
+        if (video) {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+        }
+        if (playerUrl) {
+            URL.revokeObjectURL(playerUrl);
+            playerUrl = null;
+        }
+        playingRecordingId = null;
+        document.getElementById('playerModal').classList.remove('active');
     }
 
     function showDeleteModal(id, name) { fileToDelete = id; document.getElementById('deleteFileName').textContent = name; document.getElementById('deleteModal').classList.add('active'); }
     function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('active'); fileToDelete = null; }
     async function confirmDelete() {
-        if(!fileToDelete) return;
+        const id = fileToDelete;
+        if (id == null) return;
         try {
-            const tx = db.transaction([STORE_NAME], 'readwrite');
-            await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).delete(fileToDelete); req.onsuccess = res; req.onerror = rej; tx.onabort = () => rej(new Error('删除失败')); });
+            const tx = db.transaction([STORE_NAME, BLOB_STORE], 'readwrite');
+            tx.objectStore(STORE_NAME).delete(id);
+            tx.objectStore(BLOB_STORE).delete(id);
+            await txComplete(tx);
+            if (playingRecordingId === id) closePlayer();
             closeDeleteModal();
-            loadRecordings();
+            await loadRecordings();
             updateStorageInfo();
             showToast('已删除');
         } catch(e) {
@@ -615,106 +1127,177 @@
     // ---------- ffmpeg.wasm MP4 转换 ----------
     async function loadFfmpeg() {
         if (ffmpegLoaded && ffmpegInstance) return ffmpegInstance;
-        if (ffmpegLoading) return null;
-        ffmpegLoading = true;
-        const progressEl = document.getElementById('ffmpegProgress');
-        const statusEl = document.getElementById('ffmpegStatus');
-        const barEl = document.getElementById('ffmpegBar');
-        progressEl.style.display = 'block';
-        statusEl.textContent = '正在加载转换引擎 (~25MB)...';
-        barEl.style.width = '10%';
-        try {
-            const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js');
-            const { toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js');
-            ffmpegInstance = new FFmpeg();
-            ffmpegInstance.on('progress', ({ progress }) => {
-                barEl.style.width = Math.min(Math.round(progress * 100), 99) + '%';
-                statusEl.textContent = `正在转换... ${Math.round(progress * 100)}%`;
-            });
-            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-            barEl.style.width = '30%';
-            await ffmpegInstance.load({
-                coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-            });
-            ffmpegLoaded = true;
-            barEl.style.width = '100%';
-            statusEl.textContent = '转换引擎就绪';
-            setTimeout(() => { progressEl.style.display = 'none'; }, 1500);
-            ffmpegLoading = false;
-            return ffmpegInstance;
-        } catch(e) {
-            console.error('ffmpeg 加载失败', e);
-            statusEl.textContent = '转换引擎加载失败';
-            barEl.style.width = '0%';
-            setTimeout(() => { progressEl.style.display = 'none'; }, 3000);
-            ffmpegLoading = false;
-            ffmpegInstance = null;
-            return null;
-        }
-    }
-
-    async function convertRecording(id) {
-        const ffmpeg = await loadFfmpeg();
-        if (!ffmpeg) { showToast('无法加载 MP4 转换引擎', 'error'); return; }
-        try {
-            const tx = db.transaction([STORE_NAME], 'readonly');
-            const rec = await new Promise((res, rej) => { const req = tx.objectStore(STORE_NAME).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
-            if (!rec) { showToast('文件不存在', 'error'); return; }
+        if (ffmpegLoadingPromise) return ffmpegLoadingPromise;
+        ffmpegLoadingPromise = (async () => {
             const progressEl = document.getElementById('ffmpegProgress');
             const statusEl = document.getElementById('ffmpegStatus');
             const barEl = document.getElementById('ffmpegBar');
             progressEl.style.display = 'block';
+            statusEl.textContent = '正在加载转换引擎 (~25MB)...';
+            barEl.style.width = '10%';
+            try {
+                const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js');
+                const { toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js');
+                const instance = new FFmpeg();
+                instance.on('progress', ({ progress }) => {
+                    const pct = Number.isFinite(progress) ? Math.min(Math.round(progress * 100), 99) : 0;
+                    barEl.style.width = pct + '%';
+                    statusEl.textContent = `正在转换... ${pct}%`;
+                });
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+                barEl.style.width = '30%';
+                await instance.load({
+                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                });
+                ffmpegInstance = instance;
+                ffmpegLoaded = true;
+                barEl.style.width = '100%';
+                statusEl.textContent = '转换引擎就绪';
+                return instance;
+            } catch(e) {
+                console.error('ffmpeg 加载失败', e);
+                ffmpegInstance = null;
+                ffmpegLoaded = false;
+                statusEl.textContent = '转换引擎加载失败';
+                barEl.style.width = '0%';
+                return null;
+            }
+        })();
+        try {
+            return await ffmpegLoadingPromise;
+        } finally {
+            ffmpegLoadingPromise = null;
+        }
+    }
+
+    function setConvertButtonsDisabled(disabled) {
+        document.querySelectorAll('.btn-icon.convert').forEach(btn => { btn.disabled = disabled; });
+    }
+
+    async function convertRecording(id) {
+        if (isConverting) { showToast('已有转换任务正在进行', 'warning'); return; }
+        isConverting = true;
+        setConvertButtonsDisabled(true);
+
+        const progressEl = document.getElementById('ffmpegProgress');
+        const statusEl = document.getElementById('ffmpegStatus');
+        const barEl = document.getElementById('ffmpegBar');
+        let ffmpeg = null;
+        let inputName = null;
+        let outputName = null;
+        try {
+            progressEl.style.display = 'block';
+            statusEl.textContent = '读取录像...';
+            barEl.style.width = '5%';
+            const rec = await readRecording(id);
+            if (!rec || !rec.blob) { showToast('文件不存在', 'error'); return; }
+
+            ffmpeg = await loadFfmpeg();
+            if (!ffmpeg) { showToast('无法加载 MP4 转换引擎', 'error'); return; }
+
+            inputName = `input_${id}.webm`;
+            outputName = `output_${id}.mp4`;
             statusEl.textContent = '正在写入文件...';
             barEl.style.width = '50%';
             const inputData = new Uint8Array(await rec.blob.arrayBuffer());
-            await ffmpeg.writeFile('input.webm', inputData);
+            await ffmpeg.writeFile(inputName, inputData);
+
             statusEl.textContent = '正在转换为 MP4...';
             barEl.style.width = '60%';
-            await ffmpeg.exec(['-i', 'input.webm', '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'output.mp4']);
-            const outputData = await ffmpeg.readFile('output.mp4');
-            await ffmpeg.deleteFile('input.webm');
-            await ffmpeg.deleteFile('output.mp4');
+            const exitCode = await ffmpeg.exec(['-i', inputName, '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outputName]);
+            if (exitCode !== 0) throw new Error(`ffmpeg 转换失败 (exit ${exitCode})`);
+
+            const outputData = await ffmpeg.readFile(outputName);
             const mp4Blob = new Blob([outputData], { type: 'video/mp4' });
-            const mp4Filename = rec.filename.replace(/\.\w+$/, '') + '.mp4';
+            const mp4Filename = (rec.filename || `recording_${id}.webm`).replace(/\.\w+$/, '') + '.mp4';
             const url = URL.createObjectURL(mp4Blob);
-            const a = document.createElement('a'); a.href = url; a.download = mp4Filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = mp4Filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
             barEl.style.width = '100%';
             statusEl.textContent = '转换完成';
-            setTimeout(() => { progressEl.style.display = 'none'; }, 1500);
             showToast('MP4 转换完成，已开始下载');
         } catch(e) {
             console.error('MP4 转换失败', e);
+            statusEl.textContent = '转换失败';
             showToast('转换失败: ' + e.message, 'error');
-            document.getElementById('ffmpegProgress').style.display = 'none';
+        } finally {
+            if (ffmpeg) {
+                if (inputName) { try { await ffmpeg.deleteFile(inputName); } catch(e) {} }
+                if (outputName) { try { await ffmpeg.deleteFile(outputName); } catch(e) {} }
+            }
+            isConverting = false;
+            setConvertButtonsDisabled(false);
+            setTimeout(() => { progressEl.style.display = 'none'; }, 1500);
         }
     }
 
     // ---------- 计时 ----------
     function updateTimer() {
-        const elapsed = Date.now() - startTime - pausedDuration;
-        const str = formatDuration(elapsed);
+        if (!currentSession) return;
+        const str = formatDuration(getElapsedMs());
         document.getElementById('duration').textContent = str;
         document.getElementById('recordTime').textContent = str;
     }
-    function updateRecordingSize() { const total = recordedChunks.reduce((s, c) => s + c.size, 0); document.getElementById('size').textContent = formatBytes(total); }
+    function updateRecordingSize() {
+        document.getElementById('size').textContent = formatBytes(currentSession ? currentSession.size : 0);
+    }
 
     // ---------- 快捷键 ----------
+    function toggleUiVisibility() {
+        document.body.classList.toggle('ui-hidden');
+    }
+
     document.addEventListener('keydown', (e) => {
-        if(e.code === 'Space' && !e.target.matches('input,select')) { e.preventDefault(); if(!document.getElementById('pauseBtn').disabled) togglePause(); }
-        if(e.code === 'Escape') { closeFloatingPip(); closeNativePip(); document.getElementById('deleteModal').classList.remove('active'); }
-        if(e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); if(!document.getElementById('stopBtn').disabled) stopRecording(); }
-        if(e.code === 'Tab') { e.preventDefault(); document.body.style.opacity = document.body.style.opacity === '0' ? '1' : '0'; }
+        const target = e.target;
+        const typing = target && (target.matches?.('input, select, textarea') || target.isContentEditable);
+        const onControl = target && target.closest && target.closest('button, a, [role="button"]');
+        const modalOpen = document.getElementById('deleteModal').classList.contains('active') ||
+                          document.getElementById('playerModal').classList.contains('active');
+
+        if (e.code === 'Space' && !typing && !onControl && !modalOpen) {
+            e.preventDefault();
+            if (!document.getElementById('pauseBtn').disabled) togglePause();
+        }
+        if (e.code === 'Escape') {
+            closeFloatingPip();
+            closeNativePip();
+            if (document.getElementById('deleteModal').classList.contains('active')) closeDeleteModal();
+            if (document.getElementById('playerModal').classList.contains('active')) closePlayer();
+            document.body.classList.remove('ui-hidden');
+        }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
+            e.preventDefault();
+            if (!document.getElementById('stopBtn').disabled) stopRecording();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyH') {
+            e.preventDefault();
+            toggleUiVisibility();
+        }
     });
 
     // ---------- 初始化 ----------
     window.addEventListener('load', async () => {
-        await initDB();
-        await loadDevices(true); // 页面加载时无权限枚举，填充设备 ID
-        await loadRecordings();
+        try {
+            await initDB();
+        } catch(e) {
+            console.error('初始化数据库失败', e);
+            showToast('本地存储初始化失败，请刷新页面重试', 'error');
+        }
+        await loadDevices();
+        if (db) {
+            await loadRecordings();
+            recoverStaleSessions();
+            setInterval(recoverStaleSessions, 10000);
+        }
         await updateStorageInfo();
         setInterval(updateStorageInfo, 30000);
+
         // MP4 支持检测
         const mp4 = detectMp4Support();
         const mp4Option = document.getElementById('mp4Option');
@@ -722,20 +1305,26 @@
         if (!mp4) {
             mp4Option.disabled = true;
             mp4Option.textContent = 'MP4 (此浏览器不支持)';
-            formatHint.textContent = '当前浏览器不支持 MP4 录制，可使用 WebM 录制后转换';
+            formatHint.textContent = '当前浏览器不支持带音频的 MP4 录制，可使用 WebM 录制后转换';
         } else {
             formatHint.textContent = 'MP4 录制: ' + mp4;
         }
     });
     window.addEventListener('beforeunload', (e) => {
-        if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+        if (isRecording || isSaving || (currentSession && !currentSession.finalized)) {
             e.preventDefault();
             e.returnValue = '';
-            // 尝试停止并保存（beforeunload 中的异步操作不一定能完成）
-            try { mediaRecorder.stop(); } catch(ex) {}
         }
+    });
+    window.addEventListener('pagehide', () => {
+        if (currentSession) {
+            stopRecording();
+            return;
+        }
+        try {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        } catch(ex) {}
         if(stream) stream.getTracks().forEach(t => t.stop());
-        cancelAnimationFrame(animationFrameId);
     });
 </script>
 <script>

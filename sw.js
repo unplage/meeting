@@ -2,20 +2,26 @@
 // 动态确定当前应用的子目录，隔离缓存，确保离线访问正常
 
 // ---------- 1. 动态路径与缓存名称 ----------
-// 获取当前 sw.js 所在的目录路径（例如 '/pwa1/'）
+// 获取当前 sw.js 所在的目录路径（例如 '/meeting/'）
 const BASE_PATH = self.location.pathname.replace(/[^/]+$/, '');
-// 构建带项目标识的缓存名称，避免多项目冲突
-// 例如 '/pwa1/' -> 'pwa-cache-pwa1-v1'
-const CACHE_NAME = `pwa-cache${BASE_PATH.replace(/\//g, '-')}v3`;
+// 用应用标识 + 当前子路径生成缓存前缀，避免同一 origin 下不同项目互相清理缓存
+// 例如 '/meeting/' -> 'meeting-pwa-_meeting_-v4'
+const BASE_KEY = BASE_PATH.replace(/[^a-zA-Z0-9]/g, '_') || 'root';
+const CACHE_PREFIX = `meeting-pwa-${BASE_KEY}-`;
+const CACHE_NAME = `${CACHE_PREFIX}v4`;
+// 兼容旧版本的缓存名（只在非根路径下清理，避免误删其它项目）
+const LEGACY_CACHE_PREFIX = BASE_PATH === '/' ? null : `pwa-cache${BASE_PATH.replace(/\//g, '-')}`;
 
 // 预缓存资源列表（全部使用相对于当前 sw.js 的路径）
 const PRECACHE_URLS = [
-  BASE_PATH,                 // 例如 '/pwa1/'
+  BASE_PATH,                 // 例如 '/meeting/'
   `${BASE_PATH}index.html`,
   `${BASE_PATH}manifest.json`,
-  // 如果有图标，可以追加，例如：
-  // `${BASE_PATH}favicon.ico`,
-  // `${BASE_PATH}logo192.png`,
+  `${BASE_PATH}icons/icon-192.png`,
+  `${BASE_PATH}icons/icon-512.png`,
+  `${BASE_PATH}icons/icon-maskable-512.png`,
+  `${BASE_PATH}icons/apple-touch-icon.png`,
+  `${BASE_PATH}icons/favicon-32.png`,
 ];
 
 // 静态资源扩展名（用于判断是否缓存优先）
@@ -54,8 +60,10 @@ self.addEventListener('activate', (event) => {
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cache => {
-          // 只删除以 'pwa-cache-' 开头且不属于当前项目的缓存
-          if (cache.startsWith('pwa-cache-') && cache !== CACHE_NAME) {
+          // 只删除当前项目的旧缓存，以及当前项目的旧命名缓存
+          const isCurrentProject = cache.startsWith(CACHE_PREFIX);
+          const isLegacyCurrentProject = LEGACY_CACHE_PREFIX && cache.startsWith(LEGACY_CACHE_PREFIX);
+          if ((isCurrentProject || isLegacyCurrentProject) && cache !== CACHE_NAME) {
             console.log('[SW] 删除旧缓存:', cache);
             return caches.delete(cache);
           }
@@ -87,8 +95,8 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         })
         .catch(async () => {
-          // 网络失败，尝试从缓存获取
-          const cachedResponse = await caches.match(request);
+          // 网络失败，尝试从缓存获取（忽略查询参数，避免离线时 ?x=1 无法命中）
+          const cachedResponse = await caches.match(request, { ignoreSearch: true });
           if (cachedResponse) {
             console.log('[SW] 离线模式，使用缓存页面:', url.pathname);
             return cachedResponse;
