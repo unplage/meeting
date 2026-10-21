@@ -5,10 +5,10 @@
 // 获取当前 sw.js 所在的目录路径（例如 '/meeting/'）
 const BASE_PATH = self.location.pathname.replace(/[^/]+$/, '');
 // 用应用标识 + 当前子路径生成缓存前缀，避免同一 origin 下不同项目互相清理缓存
-// 例如 '/meeting/' -> 'meeting-pwa-_meeting_-v4'
+// 例如 '/meeting/' -> 'meeting-pwa-_meeting_-v5'
 const BASE_KEY = BASE_PATH.replace(/[^a-zA-Z0-9]/g, '_') || 'root';
 const CACHE_PREFIX = `meeting-pwa-${BASE_KEY}-`;
-const CACHE_NAME = `${CACHE_PREFIX}v4`;
+const CACHE_NAME = `${CACHE_PREFIX}v5`;
 // 兼容旧版本的缓存名（只在非根路径下清理，避免误删其它项目）
 const LEGACY_CACHE_PREFIX = BASE_PATH === '/' ? null : `pwa-cache${BASE_PATH.replace(/\//g, '-')}`;
 

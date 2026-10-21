@@ -550,6 +550,7 @@
 
     async function startRecording() {
         if (isRecording || isSaving || currentSession) return;
+        if (isConverting) { showToast('转换任务进行中，请稍后再录制', 'warning'); return; }
         if (!db) { showToast('存储初始化失败，请刷新页面重试', 'error'); return; }
         if (typeof MediaRecorder === 'undefined') { showToast('当前浏览器不支持录制', 'error'); return; }
 
@@ -901,7 +902,7 @@
         try {
             await flushChunkWrites();
             const chunks = await collectSessionChunks(session);
-            const blob = new Blob(chunks.map(chunk => chunk.blob), {
+            let blob = new Blob(chunks.map(chunk => chunk.blob), {
                 type: session.format === 'mp4' ? 'video/mp4' : 'video/webm'
             });
             if (!blob.size) {
@@ -910,6 +911,12 @@
                 document.getElementById('size').textContent = '0 MB';
                 showToast('未录制到内容，已取消保存', 'warning');
                 return;
+            }
+            let mp4RepairFailed = false;
+            if (session.format === 'mp4') {
+                const repaired = await repairMp4Blob(blob, session.id);
+                if (repaired) blob = repaired;
+                else mp4RepairFailed = true;
             }
             const lastTs = chunks.length ? chunks[chunks.length - 1].ts : Date.now();
             const duration = session.duration != null
@@ -925,7 +932,8 @@
             await commitRecording(session, recording, blob);
             document.getElementById('duration').textContent = '00:00';
             document.getElementById('size').textContent = '0 MB';
-            showToast('录制已保存');
+            if (mp4RepairFailed) showToast('录制已保存，但 MP4 容器修复失败', 'warning');
+            else showToast('录制已保存');
             loadRecordings();
             updateStorageInfo();
         } catch(e) {
@@ -1020,7 +1028,9 @@
             const fmt = (rec.format || 'webm').toLowerCase();
             const badgeClass = fmt === 'mp4' ? 'mp4' : 'webm';
             const badgeText = fmt === 'mp4' ? 'MP4' : 'WEBM';
-            const convertBtn = fmt === 'mp4' ? '' : `<button class="btn-icon convert" onclick="convertRecording(${rec.id})" title="转换为 MP4 下载" ${isConverting ? 'disabled' : ''}>🔄</button>`;
+            const actionBtn = fmt === 'mp4'
+                ? `<button class="btn-icon convert" onclick="repairRecording(${rec.id})" title="修复 MP4 容器" ${isConverting ? 'disabled' : ''}>🛠️</button>`
+                : `<button class="btn-icon convert" onclick="convertRecording(${rec.id})" title="转换为 MP4 下载" ${isConverting ? 'disabled' : ''}>🔄</button>`;
             return `
             <div class="recording-item" data-id="${rec.id}">
                 <div class="recording-info">
@@ -1032,7 +1042,7 @@
                 </div>
                 <div class="recording-actions">
                     <button class="btn-icon" onclick="downloadRecording(${rec.id})" title="下载">📥</button>
-                    ${convertBtn}
+                    ${actionBtn}
                     <button class="btn-icon" onclick="playRecording(${rec.id})" title="播放">▶️</button>
                     <button class="btn-icon delete" onclick="showDeleteModal(${rec.id}, ${escapeAttr(JSON.stringify(rec.filename || ''))})" title="删除">🗑️</button>
                 </div>
@@ -1171,11 +1181,83 @@
         }
     }
 
+    async function repairMp4Blob(blob, tag) {
+        const progressEl = document.getElementById('ffmpegProgress');
+        const statusEl = document.getElementById('ffmpegStatus');
+        const barEl = document.getElementById('ffmpegBar');
+        const suffix = tag || Date.now().toString(36);
+        const inputName = `remux_in_${suffix}.mp4`;
+        const outputName = `remux_out_${suffix}.mp4`;
+        let ffmpeg = null;
+        progressEl.style.display = 'block';
+        statusEl.textContent = '正在加载 MP4 修复引擎 (~25MB)...';
+        barEl.style.width = '10%';
+        showToast('正在修复 MP4 容器，首次需加载约 25MB...');
+        try {
+            ffmpeg = await loadFfmpeg();
+            if (!ffmpeg) throw new Error('修复引擎加载失败');
+            statusEl.textContent = '正在写入原始 MP4...';
+            barEl.style.width = '35%';
+            const inputData = new Uint8Array(await blob.arrayBuffer());
+            await ffmpeg.writeFile(inputName, inputData);
+            statusEl.textContent = '正在修复 MP4 容器...';
+            barEl.style.width = '55%';
+            const exitCode = await ffmpeg.exec(['-y', '-i', inputName, '-c', 'copy', '-movflags', '+faststart', outputName]);
+            if (exitCode !== 0) throw new Error(`ffmpeg remux 失败 (exit ${exitCode})`);
+            const outputData = await ffmpeg.readFile(outputName);
+            const repaired = new Blob([outputData], { type: 'video/mp4' });
+            if (!repaired.size) throw new Error('修复结果为空');
+            barEl.style.width = '100%';
+            statusEl.textContent = 'MP4 修复完成';
+            return repaired;
+        } catch(e) {
+            console.error('MP4 容器修复失败', e);
+            statusEl.textContent = 'MP4 修复失败';
+            barEl.style.width = '0%';
+            return null;
+        } finally {
+            if (ffmpeg) {
+                try { await ffmpeg.deleteFile(inputName); } catch(e) {}
+                try { await ffmpeg.deleteFile(outputName); } catch(e) {}
+            }
+            progressEl.style.display = 'none';
+        }
+    }
+
     function setConvertButtonsDisabled(disabled) {
         document.querySelectorAll('.btn-icon.convert').forEach(btn => { btn.disabled = disabled; });
     }
 
+    async function repairRecording(id) {
+        if (isConverting) { showToast('已有转换任务正在进行', 'warning'); return; }
+        if (isRecording || isSaving || currentSession) { showToast('录制或保存中无法修复', 'warning'); return; }
+        isConverting = true;
+        setConvertButtonsDisabled(true);
+        try {
+            const rec = await readRecording(id);
+            if (!rec || !rec.blob) { showToast('文件不存在', 'error'); return; }
+            const repaired = await repairMp4Blob(rec.blob, `repair_${id}`);
+            if (!repaired) { showToast('MP4 修复失败，原文件未修改', 'error'); return; }
+            const tx = db.transaction([STORE_NAME, BLOB_STORE], 'readwrite');
+            const { blob: _blob, ...meta } = rec;
+            tx.objectStore(STORE_NAME).put({ ...meta, size: repaired.size });
+            tx.objectStore(BLOB_STORE).put({ id, blob: repaired });
+            await txComplete(tx);
+            if (playingRecordingId === id) closePlayer();
+            await loadRecordings();
+            updateStorageInfo();
+            showToast('MP4 已修复，可重新播放或下载');
+        } catch(e) {
+            console.error('修复 MP4 失败', e);
+            showToast('MP4 修复失败: ' + e.message, 'error');
+        } finally {
+            isConverting = false;
+            setConvertButtonsDisabled(false);
+        }
+    }
+
     async function convertRecording(id) {
+        if (isRecording || isSaving || currentSession) { showToast('录制或保存中无法转换', 'warning'); return; }
         if (isConverting) { showToast('已有转换任务正在进行', 'warning'); return; }
         isConverting = true;
         setConvertButtonsDisabled(true);
